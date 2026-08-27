@@ -1,0 +1,27 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	// house style — matches nfctron-hub
+	"singleQuote": true,
+	"trailingComma": "all",
+	"arrowParens": "always",
+	"useTabs": true,
+	"bracketSpacing": true,
+	"semi": true,
+	"printWidth": 150,
+	"endOfLine": "lf",
+	"tabWidth": 2,
+	"sortPackageJson": false,
+	"sortImports": {
+		"newlinesBetween": false,
+		"internalPattern": ["@sonde/"],
+		"groups": [
+			["value-builtin", "value-external"],
+			{ "newlinesBetween": true },
+			["type-internal", "value-internal"],
+			{ "newlinesBetween": true },
+			["type-parent", "type-sibling", "type-index", "value-parent", "value-sibling", "value-index"],
+			"unknown",
+		],
+	},
+	"ignorePatterns": ["bun.lock", "**/*.d.ts", "**/*.gen.ts", "CHANGELOG.md"],
+}

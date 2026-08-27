@@ -17,6 +17,7 @@ there was no real alternative, it does not need an ADR.
 | [0007](./0007-tiered-model-routing.md)              | Tiered model routing with prompt caching           | Accepted |
 | [0008](./0008-append-only-signal-log.md)            | Append-only signal log, reasoning as first-class   | Accepted |
 | [0009](./0009-venue-is-source-of-truth.md)          | Venue is source of truth; local state is a cache   | Accepted |
+| [0010](./0010-oxc-toolchain.md)                     | oxlint + oxfmt, with boundaries as lint rules      | Accepted |
 
 If you read only one, read [0004](./0004-no-llm-backtests.md) — the milestone ordering, the storage
 schema, and the scoring apparatus all follow from it.

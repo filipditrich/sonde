@@ -76,15 +76,15 @@ The reasoning plane converts observations into typed `Signal` records. A signal 
 
 ```ts
 type Signal = {
-  id: string;
-  asset: string;
-  direction: "long" | "short" | "flat";
-  confidence: number; // 0..1, calibration tracked over time
-  horizon: string; // ISO 8601 duration, e.g. "PT4H"
-  rationale: string; // the model's own words
-  sourceIds: string[]; // provenance — every document that fed this
-  analyst: string; // prompt + model version that produced it
-  createdAt: string;
+	id: string;
+	asset: string;
+	direction: 'long' | 'short' | 'flat';
+	confidence: number; // 0..1, calibration tracked over time
+	horizon: string; // ISO 8601 duration, e.g. "PT4H"
+	rationale: string; // the model's own words
+	sourceIds: string[]; // provenance — every document that fed this
+	analyst: string; // prompt + model version that produced it
+	createdAt: string;
 };
 ```
 

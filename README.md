@@ -7,6 +7,7 @@
   <img src="https://img.shields.io/badge/execution-paper%20only-16a34a?style=for-the-badge" alt="Paper only" />
   <img src="https://img.shields.io/badge/stack-TypeScript%20%7C%20Bun%20%7C%20Turborepo-111111?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript | Bun | Turborepo" />
   <img src="https://img.shields.io/badge/models-Claude%20Opus%205%20%2B%20Haiku%204.5-d97757?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Opus 5 + Haiku 4.5" />
+  <img src="https://img.shields.io/badge/lint-oxlint%20%2B%20oxfmt-c96198?style=for-the-badge" alt="oxlint + oxfmt" />
   <img src="https://img.shields.io/badge/license-MIT-111111?style=for-the-badge" alt="MIT" />
 </p>
 
@@ -156,6 +157,14 @@ A few decisions that were genuinely contested:
 
 Personal project, but the docs are meant to be readable and issues are welcome. Conventional
 Commits. Decisions go in ADRs before code, not after.
+
+```bash
+bun gates    # typecheck + lint (--deny-warnings) + format check
+```
+
+Linting is [oxlint + oxfmt](docs/decisions/0010-oxc-toolchain.md). The architectural boundaries are
+lint rules rather than prose — `packages/risk` importing a model is a build error that cites the ADR
+it violates. If lint blocks an import, that is the architecture talking; don't weaken the rule.
 
 ## Disclaimer
 

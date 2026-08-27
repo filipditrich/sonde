@@ -1,26 +1,33 @@
 {
-  "name": "sonde",
-  "private": true,
-  "packageManager": "bun@1.3.14",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
-    "lint": "turbo lint",
-    "typecheck": "turbo typecheck",
-    "test": "turbo run test",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
-  },
-  "devDependencies": {
-    "prettier": "^3.6.2",
-    "turbo": "^2.5.6",
-    "typescript": "^5.7.0"
-  },
-  "engines": {
-    "node": ">=24"
-  }
+	"name": "sonde",
+	"private": true,
+	"type": "module",
+	"packageManager": "bun@1.3.14",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev": "turbo dev",
+		"build": "turbo build",
+		"lint": "oxlint .",
+		"lint:fix": "oxlint . --fix",
+		"lint:ci": "oxlint . --deny-warnings",
+		"typecheck": "turbo typecheck",
+		"test": "turbo run test",
+		"format": "oxfmt",
+		"format:check": "oxfmt --check",
+		"gates": "bun run typecheck && bun run lint:ci && bun run format:check"
+	},
+	"devDependencies": {
+		"@oxlint/plugins": "1.80.0",
+		"oxfmt": "0.65.0",
+		"oxlint": "1.80.0",
+		"oxlint-tsgolint": "7.0.2001",
+		"turbo": "^2.5.6",
+		"typescript": "^5.7.0"
+	},
+	"engines": {
+		"node": ">=24"
+	}
 }

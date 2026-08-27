@@ -13,6 +13,8 @@ system worth watching, not a profitable one — see [`docs/goals.md`](docs/goals
    never "just for testing".
 2. **`packages/risk` must not import `packages/agents`.** The gate cannot reach a model. If a change
    requires that import, the change is wrong ([ADR 0005](docs/decisions/0005-llm-proposes-code-disposes.md)).
+   This is enforced by `no-restricted-imports` overrides in `oxlint.config.ts` — if lint blocks your
+   import, that is the architecture talking, not a misconfiguration. Do not weaken the rule to pass.
 3. **No backtesting engine for the LLM path.** Reject it on sight; the reasoning is in
    [ADR 0004](docs/decisions/0004-no-llm-backtests.md). Deterministic components may be backtested
    normally.
@@ -25,6 +27,9 @@ system worth watching, not a profitable one — see [`docs/goals.md`](docs/goals
 - Bun + Turborepo. Zod schemas in `packages/core` are the single source of truth for domain types —
   never hand-write an interface that duplicates a schema.
 - Strict TS with `noUncheckedIndexedAccess`. Market data has gaps; that flag surfaces them.
+- **oxlint + oxfmt**, not ESLint/Prettier ([ADR 0010](docs/decisions/0010-oxc-toolchain.md)). House
+  style is tabs, single quotes, `printWidth` 150 — inherited from `nfctron-hub`.
+- `bun gates` (typecheck + lint with `--deny-warnings` + format check) must pass before any commit.
 - Conventional Commits.
 - Docs lead code. A structural decision gets an ADR **before** implementation, not after.
 - ADRs are append-only. Superseding means a new file plus a status edit on the old one — never a
@@ -48,6 +53,12 @@ Prompt layout is constrained by caching, and retrofitting it means rewriting eve
 Every probe input is attacker-writable public text. Delimit document content in prompts and state
 explicitly that it is data. This is defence in depth — the actual safety property is that the
 reasoning plane has no venue access.
+
+## Complexity budget
+
+Complexity is capped in lint, not merely discouraged: `max: 12` tree-wide, **`max: 8` inside
+`packages/risk`** (plus depth 2 and 60 lines per function there). When a cap trips, extract a
+function — do not raise the cap. Raising it needs an ADR.
 
 ## Current state
 
