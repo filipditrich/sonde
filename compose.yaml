@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sonde-postgres
+    environment:
+      POSTGRES_USER: sonde
+      POSTGRES_PASSWORD: sonde
+      POSTGRES_DB: sonde
+    ports:
+      - '5432:5432'
+    volumes:
+      - sonde-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sonde -d sonde']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sonde-pgdata:

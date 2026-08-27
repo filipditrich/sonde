@@ -121,8 +121,10 @@ Exit criteria for each: [`docs/roadmap.md`](docs/roadmap.md).
 
 ```bash
 bun install
-cp .env.example .env    # add ANTHROPIC_API_KEY and a Postgres URL
-bun dev
+cp .env.example .env          # add ANTHROPIC_API_KEY; the default Postgres URL matches compose
+docker compose up -d          # local Postgres 17
+bun --cwd packages/db db:migrate
+bun test                      # integration tests skip cleanly without DATABASE_URL
 ```
 
 `SONDE_EXECUTION_MODE` must be `paper`. The venue adapter refuses to construct in any other mode,
