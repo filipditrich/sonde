@@ -122,3 +122,106 @@ has to carry all of the weight, and this study says nothing yet about whether it
 2. **Cost model.** A 20-day mid-cap hold with realistic spread and fees may erase the effect.
 3. **The corroboration question**, which this study does not touch: do filings _plus_ independent
    evidence outperform filings alone? That needs the other probes built.
+
+---
+
+# Out-of-sample test — 2023 Q3 to 2025 Q2
+
+Parameters and decision rule fixed in [`spikes/a4-filing-gaps/PREREGISTRATION.md`](./spikes/a4-filing-gaps/PREREGISTRATION.md),
+committed before any of this data was downloaded.
+
+**Sample:** 8 quarters, 350,598 Form 4 submissions → 44,300 code-`P` acquisitions → **19,773
+distinct events**, 14.2% multi-insider (in-sample: 15.2% — a useful consistency check). 1,591,289
+bars across 3,078 tickers. Roughly **3× the in-sample data**.
+
+## Result — the pre-registered test passes
+
+|                                   |     median |       win |       n |
+| --------------------------------- | ---------: | --------: | ------: |
+| In-sample (2025Q3–2026Q1)         |     +2.13% |     60.7% |     214 |
+| **Out-of-sample (2023Q3–2025Q2)** | **+1.83%** | **58.3%** | **357** |
+
+Both clear the pre-registered bar. The two windows agree closely, which is the thing a lucky slice
+would not do.
+
+## Stricter controls, added after the positive result
+
+The frozen benchmark pooled _all_ tickers on _all_ days, which is weak in two ways: it includes
+micro-caps whose return distribution looks nothing like a liquid mid-cap, and it ignores _when_
+insiders buy. If executives buy after selloffs and markets mean-revert, the "edge" would be market
+timing wearing a costume.
+
+Both controls below were added **after** seeing a positive result, and both can only move the
+finding in the conservative direction — a stricter comparison cannot manufacture an effect.
+
+| Comparison                                    |     median |       mean |       win |
+| --------------------------------------------- | ---------: | ---------: | --------: |
+| **Liquid multi-insider events**               | **+1.83%** | **+2.40%** | **58.3%** |
+| Control 1 — all liquid stock-days             |     +0.13% |     +0.56% |     50.5% |
+| Control 2 — all liquid stocks, **same dates** |     +0.10% |     +0.43% |     50.4% |
+
+**Excess over the date-matched control: +1.72pp median, +1.97pp mean, +7.9pp win rate.**
+
+Control 2 is the one that matters. Holding the dates fixed removes market timing as an explanation:
+on the very same sessions, other liquid stocks returned +0.10% median. The effect is in the _names_,
+not the days.
+
+It also corrects a misreading. The original pooled benchmark had a mean of +2.08% against
+multi-insider's +2.40%, which looked like almost no edge. That +2.08% was micro-cap right-tail
+contamination — the _liquid_ control mean is +0.56%, so the mean excess is ~+1.9pp rather than
+~+0.3pp.
+
+## The bias that remains, and it is the serious one
+
+**Survivorship.** The ticker universe comes from what Alpaca serves _today_, so companies that
+delisted during the window are simply absent.
+
+|                                               |                          |
+| --------------------------------------------- | ------------------------ |
+| Clean tickers requested                       | 3,345                    |
+| With price data                               | 3,078 (92.0%)            |
+| **Missing**                                   | **267 (8.0%)**           |
+| Multi-insider events dropped for missing data | **439 of 2,749 (16.0%)** |
+
+Missing tickers carry **twice their share** of multi-insider events — consistent with small or
+distressed companies where insiders buy to signal confidence and it does not work out.
+
+**Upper bound:** if every dropped name went to zero, 16% of the cohort would be total losses, which
+would swamp a +1.83% median entirely. That bound is far too pessimistic — most delistings are
+acquisitions, which are _positive_ events — but the true figure cannot be recovered without a
+delisting dataset, and the bias runs in the direction that flatters the result.
+
+**This is the largest unquantified risk in the study and it is not small.**
+
+## Other limits
+
+- **No cost model.** A 20-session hold amortises spread better than a day trade, but it is still
+  unmodelled.
+- **Not a forward test.** Both windows are historical. Only live paper trading settles it.
+- **Portfolio effects unmodelled.** 357 events over 8 quarters is ~3.4/week; at 20-session holds
+  that is ~14 concurrent positions, whose returns are correlated with each other and with the
+  market. Per-trade excess is not portfolio excess.
+- **Found by slicing.** The multi-insider cut was one of roughly ten. Out-of-sample plus two
+  controls is much stronger evidence than the original — it is not the same as a hypothesis
+  specified in advance.
+
+## Verdict
+
+Assumption **A2 — multi-insider clusters beat single filings — survives** a pre-registered
+out-of-sample test at 3× the data and two stricter controls, with an effect size that barely moved
+between windows.
+
+That is enough to **design around**, and not enough to believe without reservation. The honest
+position: this is the strongest evidence the project has produced, it has one significant
+unquantified bias pushing in its favour, and the resolution is to run it live where survivorship
+cannot apply — a position opened today is opened in a company that exists.
+
+## What changes
+
+|                         |                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Multi-insider weighting | **Load-bearing, not decorative.** Single-filing events show +0.07% median at 20 sessions — essentially nothing. The signal _is_ the cluster |
+| Universe                | Liquid names only. Confirmed twice                                                                                                          |
+| Horizon                 | 20 sessions, confirmed out-of-sample                                                                                                        |
+| Expected cadence        | ~3.4 qualifying events/week, ~14 concurrent positions — a real portfolio, not a trickle                                                     |
+| Next control            | Delisting data would close the survivorship gap; nothing else available materially improves the estimate                                    |
