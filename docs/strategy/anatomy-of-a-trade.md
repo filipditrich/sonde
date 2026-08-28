@@ -160,20 +160,22 @@ in a print nobody could trade.
 price you reasoned about. Equities give seventeen hours to think and then reprice the asset before
 you can act. The window is real, and so is the toll.
 
-> **[PROPOSAL] A gap guard in the risk gate.** If the open gaps beyond a threshold from the
-> reference price the thesis was built on, the proposal is rejected as stale rather than chased.
-> Threshold to be set in `position-lifecycle.md`; it is a genuine parameter and should be measured
-> rather than guessed.
+> ~~**[PROPOSAL] A gap guard in the risk gate.**~~ **Withdrawn — measured and wrong.**
 >
-> This belongs in the **gate**, not the analyst. It is a deterministic, checkable condition, and a
-> model asked "has this moved too much?" will sometimes talk itself into yes.
+> The [gap study](../research/insider-filing-gap-study.md) found that theses rejected by a 4% guard
+> went on to return **+0.57% over three sessions** while those surviving it returned **−0.10%**.
+> Large gaps _continue_; the guard would have filtered out the winners. The reasoning — "a large gap
+> means the thesis is stale" — is simply false for this signal.
+>
+> Kept visible rather than deleted, because it was a plausible idea that a day of data killed, and
+> that is the point of measuring before building.
 
-Assume the guard is set at 4%. The proposal is **rejected**. Sonde logs the thesis, the reasoning,
-the gap, and the rejection — and takes no position.
+So the gap is **not** a rejection reason. Sonde enters at $29.05, having paid the overnight move —
+which is the real cost, and one no rule can avoid. **67.5% of gaps run against a bullish thesis**,
+so paying up is the normal case rather than the exception.
 
-**The most instructive path through this system ends in not trading.** The rejection is rendered on
-the dashboard next to the fills, because a thesis that was right about direction and unusable on
-price is exactly the thing worth seeing.
+What the gate should still reject on is unchanged: position caps, daily loss, order rate, liquidity
+sanity. Rejections remain a first-class dashboard surface — there just is not one here.
 
 ## 09:30 ET — the counterfactual
 
@@ -187,7 +189,7 @@ Had the stock opened at $27.60, a +0.8% gap:
 
 ## Exit and scoring
 
-Horizon `P3D` — three trading days, closing Friday. **Calendar duration and trading duration are not
+Horizon `P20D` — twenty trading sessions, roughly a calendar month. **Calendar duration and trading duration are not
 the same thing**, which crypto never forced anyone to notice.
 
 > **[PROPOSAL] Horizons are in trading days, not calendar time.** `P3D` spanning a weekend resolves
