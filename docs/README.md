@@ -6,18 +6,18 @@ If a doc disagrees with the code, either the doc is right and the code is a bug,
 
 ## Layout
 
-| Path                                   | Purpose                                                                | Lifecycle                        |
-| -------------------------------------- | ---------------------------------------------------------------------- | -------------------------------- |
-| [`overview.md`](./overview.md)         | **The whole picture** — planes, flows, diagrams, components, status    | Living                           |
-| [`goals.md`](./goals.md)               | What Sonde is for, what it is explicitly not for, how we call it a win | Living                           |
-| [`architecture.md`](./architecture.md) | Planes, dataflow, runtime boundaries, storage, cost model              | Living                           |
-| [`roadmap.md`](./roadmap.md)           | Milestone 0..N with goal + exit criteria for each                      | Living                           |
-| [`glossary.md`](./glossary.md)         | Trading and market-structure terms, defined for people who don't trade | Living                           |
-| [`strategy/`](./strategy)              | The thesis — what edge, how evidence becomes a position                | Living                           |
-| [`decisions/`](./decisions)            | ADRs in Nygard format, numbered, append-only                           | Append-only                      |
-| [`specs/`](./specs)                    | Per-feature implementation specs                                       | Just-in-time, before a milestone |
-| [`research/`](./research)              | Evidence and options, before any commitment                            | Exploratory → promoted           |
-| [`ui/`](./ui)                          | Dashboard information architecture and flows                           | Just-in-time                     |
+| Path                                   | Purpose                                                                                  | Lifecycle                        |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------- |
+| [`overview.md`](./overview.md)         | **The whole picture** — planes, flows, diagrams, components, status                      | Living                           |
+| [`goals.md`](./goals.md)               | What Sonde is for, what it is explicitly not for, how we call it a win                   | Living                           |
+| [`architecture.md`](./architecture.md) | Planes, dataflow, runtime boundaries, storage, cost model                                | Living                           |
+| [`roadmap.md`](./roadmap.md)           | Milestone 0..N with goal + exit criteria for each                                        | Living                           |
+| [`glossary.md`](./glossary.md)         | Trading and market-structure terms, defined for people who don't trade                   | Living                           |
+| [`strategy/`](./strategy)              | The thesis, and [`charter.md`](./strategy/charter.md) — universe, sizing, holding period | Living                           |
+| [`decisions/`](./decisions)            | ADRs in Nygard format, numbered, append-only                                             | Append-only                      |
+| [`specs/`](./specs)                    | Per-feature implementation specs                                                         | Just-in-time, before a milestone |
+| [`research/`](./research)              | Evidence and options, before any commitment                                              | Exploratory → promoted           |
+| [`ui/`](./ui)                          | Dashboard information architecture and flows                                             | Just-in-time                     |
 
 ## Lifecycle conventions
 
