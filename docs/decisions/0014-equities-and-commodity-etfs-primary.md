@@ -77,9 +77,11 @@ holding hours to days does not need tick data.
   act in.
 - **ADR 0012 inverts.** It held that equity signals would be scored but never executed; equities are
   now the execution target and crypto is the thing that is never executed.
-- **Penny stocks and OTC remain undecided** and are explicitly out of scope until settled. The open
-  proposal is detection rather than participation — scoring predictions of manipulation without ever
-  taking a position — and it needs its own ADR.
+- **Penny stocks and OTC are deferred, not declined.** They are out of scope for now and wanted
+  later. The open proposal is detection rather than participation — scoring predictions of
+  manipulation without ever taking a position — and it needs its own ADR before any of it is built.
+  Nothing here forecloses it: the universe is configuration, and a manipulation-detection scoreboard
+  reuses the attention machinery the strategy already requires.
 - The trade walkthrough needs rewriting around an overnight filing rather than a crypto listing.
   That rewrite is the test of whether the overnight-window argument survives contact with a concrete
   trace.

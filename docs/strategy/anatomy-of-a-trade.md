@@ -6,236 +6,235 @@ strategy layer shows up here as a sentence that cannot be written without invent
 Rules invented along the way are marked **[PROPOSAL]** and carry a rationale. They are proposals,
 not decisions — each becomes a settled rule in `charter.md` or `position-lifecycle.md` once agreed.
 
-> **Corrected 2026-08-27.** The first version opened with a Kraken listing announced days ahead of
-> the listing date. That event shape does not exist — Kraken's feed announces listings _as they go
-> live_ ([source-viability.md](../research/source-viability.md)). The trace below uses the real
-> shape. The correction removes any notion of front-running the announcement; what is left is
-> post-listing drift, which is a weaker and more crowded claim, and the scoreboard is what settles
-> whether it is a claim at all.
+> **Rewritten 2026-08-27** for US equities ([ADR 0014](../decisions/0014-equities-and-commodity-etfs-primary.md)).
+> The previous version traced a crypto listing and rested on a pre-listing window that
+> [does not exist](../research/source-viability.md). The rewrite exists to test the claim that
+> replaced it — that equity market hours supply a corroboration window for free. **That claim
+> survives, but not for free: see 09:30.**
 
 ---
 
 ## Setup
 
-Sonde has been running three weeks. Paper account, €10,000 notional. Twelve assets in the universe.
-No open positions. It is Tuesday.
+Alpaca paper account, $10,000 notional. Universe of forty US equities and six commodity ETFs. No
+open positions. It is Tuesday, and the market closed ninety minutes ago.
+
+## The mechanic
+
+Crypto never closes, so an event and its price reaction are simultaneous — a corroboration strategy
+there is always arriving after the move. US equities close at 16:00 ET and reopen at 09:30 ET the
+next day. **Anything that happens in between cannot be acted on by anyone.**
+
+That is seventeen and a half hours in which evidence accumulates and nobody can trade on it. Sonde's
+central requirement — time to let independent evidence agree — is a property of the market rather
+than something to be engineered.
 
 ## The four evidence classes
 
-Corroboration only means something if the sources are actually independent. Forty outlets carrying
-one Reuters story is **not** four corroborating sources — it is one story, which is why clustering
-runs before triage (ADR 0011).
-
-Independence is therefore defined across _classes of evidence_, not across outlets:
-
-| Class       | What it is                              | Why it is independent                  |
-| ----------- | --------------------------------------- | -------------------------------------- |
-| `venue`     | Exchange announcements, listings, halts | First-party fact, not commentary       |
-| `chain`     | On-chain flows, TVL, exchange balances  | Mechanical; expensive to fake at scale |
-| `attention` | Social mention velocity vs baseline     | The crowd, measured rather than read   |
-| `editorial` | Reported news — GDELT, RSS              | Curated third-party reporting          |
-
-> **[PROPOSAL] GDELT and RSS are one class, not two.** Both are journalists reporting the same
-> world, frequently the same wire copy. Counting them separately would manufacture corroboration
-> out of syndication — the exact failure clustering exists to prevent.
-
-This reuses `trustClass` from `@sonde/core`, which now earns a second job: it was introduced to mark
-attacker-authored text, and it also happens to be the independence axis.
+| Class       | What it is                                       | Source                   |
+| ----------- | ------------------------------------------------ | ------------------------ |
+| `filing`    | Mandated disclosure — Form 4, 8-K, congressional | SEC EDGAR, House/Senate  |
+| `editorial` | Reported news                                    | GDELT, RSS               |
+| `attention` | Social mention velocity vs baseline              | Bluesky firehose, Reddit |
+| `macro`     | Rates, commodity curves, sector moves            | FRED, ETF prices         |
 
 ---
 
-## 14:03:12 — first evidence
+## 16:47 ET — the filing
 
-`probe:kraken-announcements` (RSS, Tier A) pulls a new item.
-
-```
-XYZ is available for trading!
-```
-
-The asset is tradeable **now** — this is a coincident event, not notice of a future one. Whatever
-edge exists is in what happens _after_ the listing, and in whether the other classes corroborate.
-
-- Raw payload stored, content-hashed, **before** anything is derived from it
-- `occurredAt` 14:02:40 (feed `pubDate`), `observedAt` 14:03:12
-- `trustClass: official`, evidence class `venue`, `assets: [crypto:XYZ]`
-- Clustering finds no near-duplicate — a single-outlet cluster
-
-**One class is not a thesis.** Sonde opens a **thesis candidate** for `crypto:XYZ` and starts a
-corroboration window. Nothing is proposed. Nothing is traded.
-
-> **[PROPOSAL] Corroboration window is 6 hours.** Long enough for a slow on-chain poll or an
-> attention build to arrive; short enough that unrelated events a day apart are not welded into a
-> false thesis. Evidence older than the window ages out of the candidate.
-
-## 14:03:13 — triage
-
-The announcement arrives in a batch with 14 other items from the last five-minute window. One Haiku
-call scores all fifteen — batching is what clears the 4096-token cache floor (ADR 0007) and it costs
-about $0.004.
-
-XYZ scores high salience. Escalation flagged, but held: **there is still only one class.**
-
-> The five-minute debounce costs five minutes of latency. On an eight-hour holding period that is
-> noise — a fact that only holds because of the strategy chosen. A news-reaction strategy could not
-> afford this batching, and would cost roughly ten times as much per day.
-
-## 14:04:50 — second evidence, and the first genuinely hard call
-
-`probe:onchain` reports XYZ net exchange inflow at **+240% versus its 7-day baseline**.
-
-A rules engine scores this bearish without hesitating: coins moving _onto_ exchanges is supply
-arriving to be sold. That is the textbook reading and here it is probably wrong — inflow ahead of a
-listing announcement is market makers positioning to provide liquidity.
-
-**This is the case for an LLM in the loop.** Not sentiment reading, which is largely commoditised —
-context-dependent interpretation of a structured signal whose meaning inverts based on a fact
-carried by a different source class.
-
-> **[PROPOSAL] Evidence classes carry a direction _and_ an interpretation, not a raw value.**
-> The chain probe emits the measurement; assigning direction is the analyst's job, because the
-> correct sign depends on context the probe cannot see.
-
-Two classes now agree. **This clears the bar to form a thesis.**
-
-## 14:07:22 — third evidence
-
-`probe:bluesky` reports mention velocity for XYZ at **8× its 7-day baseline**, and flags it
-`organic-led`: the median follower count of posting accounts is low, and low-follower posts
-_precede_ high-follower ones rather than following them.
-
-> **Assumes:** organic-versus-amplified is separable from follower counts and post ordering alone.
-> Plausible, unvalidated. Confirmed or refuted by comparing the organic flag against realized
-> outcomes once the scoreboard has resolved signals — a flag that does not move the hit rate is a
-> flag to delete.
-
-> **Also assumes a baseline exists.** Bluesky's search endpoint is blocked to us; only the
-> subscribe-forward firehose is available, so a 7-day baseline requires seven days of prior
-> collection ([source-viability.md](../research/source-viability.md)). The attention collector has
-> to be running weeks before it can contribute to a single thesis.
-
-Third class. Confidence rises rather than the thesis changing.
-
-## 14:08:01 — deep read
-
-Three classes inside five minutes crosses the escalation threshold. Opus is called once, and sees:
-
-- the announcement text (`official`)
-- the on-chain series with its 7-day baseline (`chain`)
-- the attention series and a sample of posts — **delimited and marked adversarial** (`attention`)
-- current price, spread, and 24h volume for XYZ
-- open positions and remaining risk budget
-
-It returns a `Signal`:
+`probe:edgar` polls EDGAR's `getcurrent` feed. A **Form 4** for a mid-cap industrial:
 
 ```
-asset       crypto:XYZ
+Reporting person   [CFO]
+Transaction code   P  — open-market purchase
+Shares             12,400 @ $27.41   ($339,884)
+Post-transaction   holdings +18%
+```
+
+**The transaction code is the entire signal.** Form 4 traffic is overwhelmingly codes `A` (grant),
+`M` (option exercise), and `F` (shares withheld for tax) — that is compensation machinery, not
+conviction. Code `P` is an executive spending their own money on the open market.
+
+A naive "insider buying" probe that ignores codes is measuring payroll. This is the equity analogue
+of the crypto inflow problem from the previous draft: the raw event is meaningless until something
+interprets it.
+
+> **[PROPOSAL] The filing probe filters on transaction code and emits `A`/`M`/`F` as observations
+> but never as evidence.** They are stored — a pattern of grants preceding a purchase may matter —
+> but they cannot contribute to a thesis.
+
+One class. A thesis candidate opens with a corroboration window. Nothing is proposed.
+
+## 17:02 ET — a second insider, and a hole in my own rule
+
+A second Form 4, code `P`, from a **different reporting person** — a director, $96,000.
+
+Two executives independently deciding to buy is meaningfully more than one. But both are `filing`
+class, and the rule from the previous draft was **"two distinct classes."** Under that rule this
+does not corroborate at all.
+
+The rule was wrong. Class was standing in for independence, and it is only a proxy.
+
+> **[PROPOSAL] Independence is causal, not categorical.** Two pieces of evidence corroborate when
+> neither is _downstream of_ the other. Two insiders filing separately are independent decisions by
+> different people and count separately. A news article about a filing is downstream of it and does
+> not. Class remains a useful default grouping, but the test is causal origin.
+
+Under the corrected rule: **two independent pieces of evidence.** The thesis forms.
+
+## 18:20 ET — evidence that correctly does not count
+
+A wire story: _"[Company] insiders buy shares after guidance cut."_ GDELT carries it, and by 19:40
+it has been syndicated to eleven outlets.
+
+Clustering collapses eleven copies into one event ([ADR 0011](../decisions/0011-source-acquisition-policy.md)),
+and then the causal-independence rule rejects that event as evidence: **it is a report of the filing
+Sonde already has.** It contributes nothing.
+
+It is still stored, still shown on the tape, and still useful — outlet count is a decent proxy for
+how widely the fact has propagated, which bears on whether the market has already digested it by the
+open. But it does not corroborate.
+
+> This is the rule working. Under the old class-based test, `filing` + `editorial` would have cleared
+> the bar on what is a single fact counted twice — precisely the failure the equities pivot was
+> supposed to fix.
+
+## 21:40 ET — attention, mostly derivative
+
+Bluesky and Reddit mention velocity reaches 4× baseline. Sampling the posts, most link the wire
+story — derivative again. A minority reference a separate thread: a supplier contract rumour that
+predates the filing by two days.
+
+> **[PROPOSAL] Attention is split into derivative and independent components before it counts.**
+> Posts that cite, link, or paraphrase evidence Sonde already holds are derivative. Only the
+> residual counts, and only if it clears the velocity threshold on its own.
+
+The residual does not clear it. **Attention contributes nothing tonight.** Two independent pieces of
+evidence stand.
+
+## 06:15 ET — macro, genuinely exogenous
+
+Pre-market: the industrials sector ETF is up 1.1%, and a FRED series shows a rate expectation shift
+overnight. Neither has anything to do with this company.
+
+> **[PROPOSAL] `macro` is a modifier, not a corroborator.** Sector tailwind does not make an
+> insider purchase more informative — it moves the whole sector, including companies where nobody
+> bought anything. It adjusts sizing and it can veto, but it cannot form or strengthen a thesis.
+
+Applied as a mild tailwind. Thesis unchanged at two independent pieces.
+
+## 09:25 ET — deep read
+
+Five minutes before the open, Opus is called once and sees the assembled thesis: both Form 4s with
+codes and amounts, the derivative editorial cluster with its outlet count, the attention split, the
+macro context, and last night's close with pre-market indication.
+
+```
+asset       equity:XXXX
 direction   long
-confidence  0.71
-horizon     PT8H
-rationale   XYZ went live on Kraken at 14:02. Exchange inflow of +240% vs baseline
-            is concurrent with the listing rather than preceding it, which reads as
-            market makers seeding liquidity on a new venue rather than holders
-            distributing. Attention is 8x baseline and organic-led.
-sourceIds   [venue-obs, chain-obs, attention-obs]
+confidence  0.64
+horizon     P3D
+rationale   Two insiders, a CFO and a director, made open-market purchases (code P)
+            within fifteen minutes of each other on the same afternoon, following a
+            guidance cut. The CFO's stake rose 18%. Press coverage is derivative of
+            the filings rather than independent, and social attention is largely
+            downstream of that coverage, so the market has had one news cycle to
+            digest this. Sector is a mild tailwind.
 ```
 
-Cost: roughly $0.05. Note the rationale reasons about _ordering_ — flow began after the
-announcement — which is exactly the discrimination that makes the inflow bullish rather than
-bearish.
+Note what the model does with the derivative evidence: it does not treat it as confirmation, it
+treats it as **evidence the information has already propagated** — which argues for lower confidence,
+not higher. That is the reasoning the corroboration design is trying to buy.
 
-> **[PROPOSAL] Confidence is composed, not invented.** The analyst proposes a confidence; the
-> portfolio layer recomputes it from class count and each class's _measured_ historical hit rate,
-> and the lower of the two is used. Until the scoreboard has data, bootstrap weights apply:
-> 2 classes → cap 0.6, 3 classes → cap 0.75, 4 classes → cap 0.85. A single model call should not be
-> able to talk itself into a large position.
+Cost: roughly $0.05. One deep call for a thesis that took seventeen hours to assemble.
 
-## 14:08:02 — proposal and gate
+## 09:30 ET — the overnight window is not free
 
-> **[PROPOSAL] Size = 2% of equity × confidence, hard cap 2%.** Confidence is only meaningful if it
-> moves size. The cap means a miscalibrated 0.95 still risks no more than 2%.
+The stock opens at **$29.05**. Last night's close was $27.38. **It gapped +6.1%.**
 
-0.71 × 2% = **1.42%** → €142.
+The thesis was built on a $27.41 purchase price. Entering at $29.05 means buying meaningfully above
+where the insiders bought, and a large part of the move the thesis predicted has already happened —
+in a print nobody could trade.
 
-The gate runs, deterministically, with no model anywhere near it:
+**This is what the overnight window costs.** Crypto gives no time to think but lets you act at the
+price you reasoned about. Equities give seventeen hours to think and then reprice the asset before
+you can act. The window is real, and so is the toll.
 
-| Check                                        | Result                                        |
-| -------------------------------------------- | --------------------------------------------- |
-| Position cap ≤ 2%                            | 1.42% — pass                                  |
-| Correlation group exposure                   | XYZ not in `majors`; no group exposure — pass |
-| Daily loss halt                              | none today — pass                             |
-| Order rate ≤ 20/h                            | third this hour — pass                        |
-| Liquidity sanity: order < 0.5% of 24h volume | pass                                          |
-
-**ACCEPTED.** Order submitted with an idempotency key derived from the proposal id. Paper fill at
-14:08:04.
-
----
-
-## 16:30 — the thesis weakens
-
-Attention decays to 2× baseline. The thesis that opened this position was three classes; it is now
-effectively two.
-
-**The trace cannot continue without a rule that does not exist.** This is the largest hole the
-walkthrough exposed, and it splits into two questions: does decaying evidence close a position, and
-is the signal's horizon also the holding period?
-
-> **[PROPOSAL] Exit on whichever comes first:**
+> **[PROPOSAL] A gap guard in the risk gate.** If the open gaps beyond a threshold from the
+> reference price the thesis was built on, the proposal is rejected as stale rather than chased.
+> Threshold to be set in `position-lifecycle.md`; it is a genuine parameter and should be measured
+> rather than guessed.
 >
-> 1. **Horizon expiry** — the signal claimed PT8H; at 22:08 the claim is spent
-> 2. **Thesis decay** — evidence falls below two concurrent classes
-> 3. **Stop** — a hard adverse move, percentage to be set in `position-lifecycle.md`
->
-> Explicitly **no take-profit**. A take-profit level is a fitted parameter and there is no data to
-> fit it against; adding one now would be inventing a number and calling it a rule.
+> This belongs in the **gate**, not the analyst. It is a deterministic, checkable condition, and a
+> model asked "has this moved too much?" will sometimes talk itself into yes.
 
-> **[PROPOSAL] Horizon is the holding period.** Keeping the prediction horizon and the holding
-> period identical means the scoreboard measures exactly what was traded. Decoupling them is
-> defensible later, but it makes every scored number one step removed from the position that was
-> actually held.
+Assume the guard is set at 4%. The proposal is **rejected**. Sonde logs the thesis, the reasoning,
+the gap, and the rejection — and takes no position.
 
-## 22:08 — exit and scoring
+**The most instructive path through this system ends in not trading.** The rejection is rendered on
+the dashboard next to the fills, because a thesis that was right about direction and unusable on
+price is exactly the thing worth seeing.
 
-Horizon expires. Position closed at market. A `SignalResult` is written **once**:
+## 09:30 ET — the counterfactual
 
-```
-priceAtSignal        0.4120
-priceAtHorizon       0.4398
-realizedReturn       +0.0675
-directionallyCorrect true
-```
+Had the stock opened at $27.60, a +0.8% gap:
 
-> **[PROPOSAL] `flat` scores against a dead band of ±0.5%.** Without one, `flat` is almost never
-> correct and the direction becomes useless as an output.
+- Gap guard passes
+- Sizing: **[PROPOSAL] 2% of equity × confidence** → 0.64 × 2% = 1.28% → $128
+- Correlation group `industrials` has no existing exposure — pass
+- Order rate, daily loss, liquidity sanity — pass
+- **ACCEPTED**, market order at the open, idempotency key from the proposal id
 
-The scoreboard credits each contributing class. Over months this is the interesting artefact: not
-whether Sonde made money, but whether `chain` evidence outperforms `attention` evidence, and whether
-three-class theses genuinely beat two-class ones — the assumption the entire strategy rests on.
+## Exit and scoring
+
+Horizon `P3D` — three trading days, closing Friday. **Calendar duration and trading duration are not
+the same thing**, which crypto never forced anyone to notice.
+
+> **[PROPOSAL] Horizons are in trading days, not calendar time.** `P3D` spanning a weekend resolves
+> after three _sessions_. A horizon that expires while the market is shut is meaningless, and a
+> scoreboard that measures across a closed market is measuring nothing.
+
+Exit on whichever comes first: horizon expiry, thesis decay below the entry bar, or a hard stop. No
+take-profit — it is a fitted parameter and there is nothing to fit it against.
+
+A `SignalResult` is written once, and the scoreboard credits each contributing piece of evidence.
+The interesting long-run question is not the P&L: it is whether code-`P` filings outperform, whether
+multi-insider clusters beat single ones, and whether the gap guard rejected trades that would have
+worked — which is measurable, because rejections are logged with everything needed to score them
+counterfactually.
 
 ---
 
 ## What the trace exposed
 
-Nine rules had to be invented to finish one trade. Each is a proposal above and needs settling:
+| #   | Question                                       | Proposed                                                        |
+| --- | ---------------------------------------------- | --------------------------------------------------------------- |
+| 1   | What makes evidence independent?               | **Causal, not categorical** — corrected from the previous draft |
+| 2   | Which Form 4 codes count?                      | `P` only; `A`/`M`/`F` stored, never evidence                    |
+| 3   | Does reporting corroborate the thing reported? | No — derivative, but outlet count informs propagation           |
+| 4   | Does derivative social count?                  | Only the residual after removing posts citing known evidence    |
+| 5   | What role does `macro` play?                   | Modifier and veto, never a corroborator                         |
+| 6   | What happens when the open gaps?               | Gate-level gap guard; reject rather than chase                  |
+| 7   | Sizing                                         | 2% × confidence, hard cap 2%                                    |
+| 8   | Exit                                           | First of horizon / decay / stop; no take-profit                 |
+| 9   | Horizon units                                  | **Trading days, not calendar days**                             |
 
-| #   | Question                                      | Proposed                                                               |
-| --- | --------------------------------------------- | ---------------------------------------------------------------------- |
-| 1   | What counts as independent evidence?          | Four classes; GDELT + RSS are one                                      |
-| 2   | How long does corroboration stay valid?       | 6-hour window                                                          |
-| 3   | Minimum classes to form a thesis?             | 2                                                                      |
-| 4   | Who assigns direction to a structured signal? | The analyst, not the probe                                             |
-| 5   | How is confidence computed?                   | Composed and capped by class count; measured weights after Milestone 3 |
-| 6   | Position sizing?                              | 2% × confidence, hard cap 2%                                           |
-| 7   | Exit conditions?                              | First of horizon / thesis decay / stop; no take-profit                 |
-| 8   | Is horizon the holding period?                | Yes, initially                                                         |
-| 9   | Dead band for `flat`?                         | ±0.5%                                                                  |
+Still open, deferred to `charter.md`:
 
-Still unanswered, deferred to `charter.md`:
+- **Universe** — which forty equities and six ETFs, on what criteria
+- **Conflicting signals** — a `short` thesis forms while a `long` is open
+- **Correlation groups** — sector definitions, and whether ETFs collide with their holdings
+- **Cold start** — no measured evidence weights, and the attention baseline needs weeks of firehose
+- **Gap guard threshold** — a real number, to be measured rather than invented
+- **Pre-market and extended hours** — currently ignored entirely; acting at 09:30 is a choice, not a
+  given
 
-- **Universe** — which twelve assets, and on what criteria
-- **Conflicting signals** — a `short` arrives while a `long` is open
-- **Correlation groups** — which assets count as one bet
-- **Cold start** — Sonde's first weeks have no measured class weights to compose confidence from,
-  and the attention class additionally has no baseline until its collector has run for a week
-- **Cross-venue lag** — does a listing on one exchange predict a listing on another? That would be a
-  genuine leading indicator, unlike the coincident single-venue announcement
+## Assumption register
+
+| ID  | Assumption                                                   | Resolution                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | Code-`P` Form 4s carry information                           | Scoreboard, months                                                                                                                                                                          |
+| A2  | Multi-insider clusters beat single filings                   | Scoreboard, months                                                                                                                                                                          |
+| A3  | Derivative attention is separable from independent attention | Needs real post data — untested                                                                                                                                                             |
+| A4  | Overnight gaps are usually small enough to trade through     | **Directly measurable now** from historical opens against filing dates. Highest-value next spike — if most filing-driven theses gap past the guard, the strategy is unworkable in this form |
+| A5  | EDGAR `getcurrent` latency is seconds, not minutes           | Untested; one afternoon of polling settles it                                                                                                                                               |

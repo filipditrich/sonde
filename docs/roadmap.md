@@ -136,3 +136,9 @@ Deliberately unscheduled, listed so they are not mistaken for oversights:
   operational cost and buys nothing until crypto is boring.
 - **ML components.** Regime classification or position sizing as narrow models inside a
   human-reviewed strategy. Only once the scoreboard can prove they help.
+- **Penny stocks and OTC — detection, not participation.** Wanted, deliberately deferred. Sonde
+  would flag coordinated attention spikes in illiquid names and score them as predictions of
+  manipulation, never taking a position: penny markets are where pump-and-dump lives, and a bot
+  buying attention spikes there is the designed victim rather than a participant. It reuses the
+  attention machinery the main strategy already needs, so the marginal cost is a scoreboard panel
+  rather than a new subsystem. Needs its own ADR first.
