@@ -143,8 +143,9 @@ Docs are the source of truth; code implements against them.
 | [`docs/glossary.md`](docs/glossary.md)         | Trading terms, written for people who don't trade     |
 | [`docs/decisions/`](docs/decisions)            | 9 ADRs — the reasoning behind every structural choice |
 
-**Start with [ADR 0004](docs/decisions/0004-no-llm-backtests.md).** The milestone ordering, the
-storage schema, and the scoring apparatus all follow from it.
+**Start with [`docs/overview.md`](docs/overview.md)** for the whole system in one read, then
+[ADR 0004](docs/decisions/0004-no-llm-backtests.md) — the milestone ordering, the storage schema, and
+the scoring apparatus all follow from it.
 
 ## Why it's built this way
 
