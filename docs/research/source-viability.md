@@ -117,6 +117,47 @@ Consequences, none of them fatal but all of them structural:
 
 ---
 
+## SEC EDGAR — requires a declared contact
+
+Every SEC endpoint returns **403** with an _"Undeclared Automated Tool"_ page unless the `User-Agent`
+declares a contact. Tested and rejected:
+
+```
+sonde-research/0.1 (+https://github.com/filipditrich/sonde)   403
+Sonde Research https://github.com/filipditrich/sonde          403
+Mozilla/5.0 (compatible; sonde-research/0.1)                  403
+```
+
+Both `www.sec.gov/Archives` and `data.sec.gov` behave identically. A repository URL does not satisfy
+it — SEC's fair-access policy asks for a name and an **email address**, and the block is on the
+declaration rather than on rate or IP.
+
+This is not an obstacle to work around; it is the terms of access for a free, public, official
+source, and it costs one config value. Declared contact lives in `SONDE_CONTACT_EMAIL` and is sent
+by the shared fetch layer on every SEC request, alongside the 10 req/s ceiling.
+
+> **Design note.** The politeness layer in [ADR 0011](../decisions/0011-source-acquisition-policy.md)
+> now has a second job: per-source _identity_, not just per-source rate limiting. Some sources
+> require the client to say who it is. The fetch layer should take a source profile — user agent,
+> rate ceiling, conditional-request policy — rather than a single global config.
+
+## Stooq — ruled out by our own policy
+
+Stooq serves free daily OHLC CSVs and needs no key, which made it an obvious candidate for the
+price half of the gap study. It now answers with a JavaScript **proof-of-work challenge**: the
+client must brute-force a SHA-256 prefix and POST the nonce back before the CSV is served.
+
+Defeating that is squarely Tier C under ADR 0011 — "defeating anti-bot measures" — so Stooq is out.
+Not because it is hard, but because we wrote the rule.
+
+> Worth noting as the policy working. The tempting move was a twenty-line PoW solver; the rule made
+> that a non-decision, which is what a good rule does.
+
+Price data therefore comes from **Alpaca**, which is the chosen venue anyway
+([ADR 0014](../decisions/0014-equities-and-commodity-etfs-primary.md)) and whose free tier covers
+IEX real-time plus everything older than fifteen minutes. It needs an API key, which is correct:
+keyed access with terms beats keyless access we would have to defeat something to reach.
+
 ## Status of the trace's assumptions
 
 | From the trace                                  | Status                                                       |
