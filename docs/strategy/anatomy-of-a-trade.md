@@ -6,6 +6,13 @@ strategy layer shows up here as a sentence that cannot be written without invent
 Rules invented along the way are marked **[PROPOSAL]** and carry a rationale. They are proposals,
 not decisions — each becomes a settled rule in `charter.md` or `position-lifecycle.md` once agreed.
 
+> **Corrected 2026-08-27.** The first version opened with a Kraken listing announced days ahead of
+> the listing date. That event shape does not exist — Kraken's feed announces listings _as they go
+> live_ ([source-viability.md](../research/source-viability.md)). The trace below uses the real
+> shape. The correction removes any notion of front-running the announcement; what is left is
+> post-listing drift, which is a weaker and more crowded claim, and the scoreboard is what settles
+> whether it is a claim at all.
+
 ---
 
 ## Setup
@@ -42,8 +49,11 @@ attacker-authored text, and it also happens to be the independence axis.
 `probe:kraken-announcements` (RSS, Tier A) pulls a new item.
 
 ```
-Kraken will list XYZ on 2026-09-01. Deposits open 2026-08-30.
+XYZ is available for trading!
 ```
+
+The asset is tradeable **now** — this is a coincident event, not notice of a future one. Whatever
+edge exists is in what happens _after_ the listing, and in whether the other classes corroborate.
 
 - Raw payload stored, content-hashed, **before** anything is derived from it
 - `occurredAt` 14:02:40 (feed `pubDate`), `observedAt` 14:03:12
@@ -98,6 +108,11 @@ _precede_ high-follower ones rather than following them.
 > outcomes once the scoreboard has resolved signals — a flag that does not move the hit rate is a
 > flag to delete.
 
+> **Also assumes a baseline exists.** Bluesky's search endpoint is blocked to us; only the
+> subscribe-forward firehose is available, so a 7-day baseline requires seven days of prior
+> collection ([source-viability.md](../research/source-viability.md)). The attention collector has
+> to be running weeks before it can contribute to a single thesis.
+
 Third class. Confidence rises rather than the thesis changing.
 
 ## 14:08:01 — deep read
@@ -117,10 +132,10 @@ asset       crypto:XYZ
 direction   long
 confidence  0.71
 horizon     PT8H
-rationale   Kraken listing confirmed for Sep 1 with deposits opening Aug 30. Exchange
-            inflow of +240% vs baseline is consistent with market makers positioning
-            for the listing rather than distribution — the flow began after the
-            announcement, not before it. Attention is 8x baseline and organic-led.
+rationale   XYZ went live on Kraken at 14:02. Exchange inflow of +240% vs baseline
+            is concurrent with the listing rather than preceding it, which reads as
+            market makers seeding liquidity on a new venue rather than holders
+            distributing. Attention is 8x baseline and organic-led.
 sourceIds   [venue-obs, chain-obs, attention-obs]
 ```
 
@@ -220,4 +235,7 @@ Still unanswered, deferred to `charter.md`:
 - **Universe** — which twelve assets, and on what criteria
 - **Conflicting signals** — a `short` arrives while a `long` is open
 - **Correlation groups** — which assets count as one bet
-- **Cold start** — Sonde's first weeks have no measured class weights to compose confidence from
+- **Cold start** — Sonde's first weeks have no measured class weights to compose confidence from,
+  and the attention class additionally has no baseline until its collector has run for a week
+- **Cross-venue lag** — does a listing on one exchange predict a listing on another? That would be a
+  genuine leading indicator, unlike the coincident single-venue announcement
