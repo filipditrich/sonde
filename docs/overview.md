@@ -321,7 +321,8 @@ price.
 | 6 · Watch        | Replay, cost dashboard, alerting       | Planned     |
 | 7 · Iterate      | Prompt versioning, shadow analysts     | Planned     |
 
-**Scoring is built before execution.** Measuring before acting is the only way this stays honest.
+**Scoring is built before execution**, and **no model call happens until the deterministic baseline
+is running and scored** — otherwise "did the LLM help?" is unanswerable.
 
 ### Open assumptions
 

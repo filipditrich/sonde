@@ -104,16 +104,16 @@ prefix cached at ~0.1× input price.
 
 Milestone 0. Docs first, deliberately — the decisions below were the hard part.
 
-| Milestone        | Goal                                       | State       |
-| ---------------- | ------------------------------------------ | ----------- |
-| 0 · Pipe         | Data flows end to end, no intelligence     | In progress |
-| 1 · Ears         | Unstructured sources with clean provenance | Planned     |
-| 2 · Opinion      | First analyst, signals with reasoning      | Planned     |
-| 3 · Scorekeeping | Resolve signals against reality            | Planned     |
-| 4 · Gate         | Risk limits, tested adversarially          | Planned     |
-| 5 · Hands        | Paper trading, end to end                  | Planned     |
-| 6 · Watch        | Replay, cost dashboard, alerting           | Planned     |
-| 7 · Iterate      | Prompt versioning, shadow analysts         | Planned     |
+| Milestone         | Goal                                          | State       |
+| ----------------- | --------------------------------------------- | ----------- |
+| 0 · Pipe          | EDGAR + price probes flowing, visible         | In progress |
+| 1 · Signal        | Deterministic signal engine emitting Signals  | Planned     |
+| 2 · Scorekeeping  | Resolve at 20 sessions against reality        | Planned     |
+| 3 · Gate          | Risk limits, adversarially tested             | Planned     |
+| 4 · Hands         | Paper trading end to end                      | Planned     |
+| 5 · Watch         | Replay, cost dashboard, alerting              | Planned     |
+| 6 · Corroboration | The model enters, scored against the baseline | Planned     |
+| 7 · Iterate       | Prompt versioning, shadow analysts            | Planned     |
 
 Exit criteria for each: [`docs/roadmap.md`](docs/roadmap.md).
 
