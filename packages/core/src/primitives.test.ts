@@ -67,13 +67,18 @@ describe('AssetId', () => {
 		expect(AssetId.safeParse('crypto:btc').success).toBe(false);
 	});
 
-	test('only crypto is executable — ADR 0012', () => {
+	test('only equities are executable — ADR 0014', () => {
 		const btc = AssetId.parse('crypto:BTC');
 		const aapl = AssetId.parse('equity:AAPL');
+		const gld = AssetId.parse('equity:GLD');
 
 		expect(assetClassOf(btc)).toBe('crypto');
 		expect(assetClassOf(aapl)).toBe('equity');
-		expect(isExecutable(btc)).toBe(true);
-		expect(isExecutable(aapl)).toBe(false);
+
+		// Crypto is a plumbing testbed and never holds a position.
+		expect(isExecutable(btc)).toBe(false);
+		expect(isExecutable(aapl)).toBe(true);
+		// Commodity ETFs trade as ordinary equities — no separate class.
+		expect(isExecutable(gld)).toBe(true);
 	});
 });

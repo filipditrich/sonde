@@ -87,9 +87,13 @@ export type EventClusterId = z.infer<typeof EventClusterId>;
 /**
  * Asset class is part of the identifier because it decides executability.
  *
- * Sonde ingests and scores equity signals but only ever trades crypto (ADR 0012), so the
- * distinction has to survive all the way to the portfolio agent rather than living in a
- * lookup table someone forgets to consult.
+ * Equities and commodity ETFs are the execution target; crypto is a plumbing testbed that
+ * never holds a position (ADR 0014, superseding ADR 0012 — this pair was the other way round
+ * until the market pivot). The distinction has to survive all the way to the portfolio agent
+ * rather than living in a lookup table someone forgets to consult.
+ *
+ * Commodity ETFs need no class of their own — they trade as ordinary equities on the same
+ * venue, so `equity:GLD` is exactly right.
  */
 export const AssetClass = z.enum(['crypto', 'equity']);
 export type AssetClass = z.infer<typeof AssetClass>;
@@ -103,5 +107,5 @@ export type AssetId = z.infer<typeof AssetId>;
 /** Narrow an asset to its class without a lookup. */
 export const assetClassOf = (asset: AssetId): AssetClass => (asset.startsWith('crypto:') ? 'crypto' : 'equity');
 
-/** Only crypto reaches a venue — ADR 0012. */
-export const isExecutable = (asset: AssetId): boolean => assetClassOf(asset) === 'crypto';
+/** Only equities reach a venue — ADR 0014. Crypto is observed, never traded. */
+export const isExecutable = (asset: AssetId): boolean => assetClassOf(asset) === 'equity';

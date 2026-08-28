@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (Milestone 3, 2026-08-27)
+**Superseded by [0014](./0014-equities-and-commodity-etfs-primary.md)** (2026-08-27). The position
+inverted: equities became the execution target and crypto the thing that is never executed. The
+reasoning below about Form 4 timeliness and disclosure quality carried into 0014 and still holds.
 
 ## Context
 

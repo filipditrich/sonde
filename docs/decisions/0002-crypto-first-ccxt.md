@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (Milestone 0, 2026-08-27)
+Accepted (Milestone 0, 2026-08-27) — **scope amended by [0014](./0014-equities-and-commodity-etfs-primary.md)**:
+crypto is now a plumbing testbed rather than the strategy target. The venue abstraction below stands
+unchanged and is what made the reversal cheap.
 
 ## Context
 
