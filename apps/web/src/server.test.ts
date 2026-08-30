@@ -68,9 +68,7 @@ describe('cockpit server', () => {
 			token,
 		);
 		const session = await clustered.fetch(new Request('http://local/session', { method: 'POST', headers: { authorization: `Bearer ${token}` } }));
-		const page = await clustered.fetch(
-			new Request('http://local/', { headers: { cookie: session.headers.get('set-cookie')!.split(';')[0]! } }),
-		);
+		const page = await clustered.fetch(new Request('http://local/', { headers: { cookie: session.headers.get('set-cookie')!.split(';')[0]! } }));
 		const body = await page.text();
 		expect(body).toContain('Issuer cluster 2');
 		expect(body).toContain('P 10 @ 1');

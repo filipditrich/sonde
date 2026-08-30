@@ -217,6 +217,22 @@ suite('M0 PostgreSQL evidence contract', () => {
 		);
 		expect(counts[0]).toEqual({ runs: 1, facts: 1 });
 	});
+	test('sonde_web can read evidence and cannot insert it', async () => {
+		await db.execute(sql`SET ROLE sonde_web`);
+		try {
+			const rows = await db.execute<{ count: number }>(sql`SELECT count(*)::int AS count FROM m0_source_documents`);
+			expect(Number(rows[0]?.count)).toBeGreaterThan(0);
+			await failure(
+				() =>
+					db.execute(
+						sql`INSERT INTO m0_source_documents(sha256,bytes,byte_size,media_type,retention_class,recorded_at) VALUES(${missingSha},decode('00ff01','hex'),3,'application/xml','immutable',${at})`,
+					),
+				/permission denied/i,
+			);
+		} finally {
+			await db.execute(sql`RESET ROLE`);
+		}
+	});
 	test('rejects a derived artifact with a missing or wrong-kind input reference', async () => {
 		await failure(
 			() =>
