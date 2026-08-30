@@ -49,4 +49,31 @@ describe('cockpit server', () => {
 		const page = await app.fetch(new Request('http://local/', { headers }));
 		expect(await page.text()).toContain('quiet');
 	});
+	test('groups retained facts by issuer so a filing cluster is visible', async () => {
+		const clustered = createCockpitServer(
+			{
+				snapshot: async () =>
+					({
+						cursor: 1,
+						asOf: '2026-08-30T00:00:00.000Z',
+						funnel: { documents: 2, transactions: 2, qualifyingPurchases: 2 },
+						facts: [
+							{ issuerCik: '0001702750', issuerName: 'Issuer', transactionCode: 'P', shares: '10', pricePerShare: '1' },
+							{ issuerCik: '0001702750', issuerName: 'Issuer', transactionCode: 'P', shares: '20', pricePerShare: '2' },
+						],
+						health: [],
+					}) as unknown as CockpitSnapshot,
+				eventsAfter: async () => [],
+			},
+			token,
+		);
+		const session = await clustered.fetch(new Request('http://local/session', { method: 'POST', headers: { authorization: `Bearer ${token}` } }));
+		const page = await clustered.fetch(
+			new Request('http://local/', { headers: { cookie: session.headers.get('set-cookie')!.split(';')[0]! } }),
+		);
+		const body = await page.text();
+		expect(body).toContain('Issuer cluster 2');
+		expect(body).toContain('P 10 @ 1');
+		expect(body).toContain('P 20 @ 2');
+	});
 });

@@ -16,8 +16,31 @@ const hash = async (value: string) => Buffer.from(await crypto.subtle.digest('SH
 const equalHash = (left: string, right: string) => timingSafeEqual(Buffer.from(left), Buffer.from(right));
 const escapeHtml = (value: string) =>
 	value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
+const factItems = (facts: CockpitSnapshot['facts']) => {
+	if (!facts.length) return '<li>No retained facts</li>';
+	const groups = new Map<string, CockpitSnapshot['facts']>();
+	for (const fact of facts) {
+		const group = groups.get(fact.issuerCik) ?? [];
+		groups.set(fact.issuerCik, [...group, fact]);
+	}
+	return [...groups.values()]
+		.map((group) => {
+			const head = group[0];
+			if (!head) return '';
+			const rows = group.map((fact) => `${escapeHtml(fact.transactionCode)} ${fact.shares} @ ${fact.pricePerShare}`).join('; ');
+			return `<li>${escapeHtml(head.issuerName)} cluster ${group.length}: ${rows}</li>`;
+		})
+		.join('');
+};
+const healthItems = (health: CockpitSnapshot['health']) =>
+	health
+		.map(
+			(item) =>
+				`<li>${escapeHtml(item.job)}: ${escapeHtml(item.freshness)}${item.freshness === 'unseen' ? '' : ` (${escapeHtml(item.outcome ?? item.job)}) at ${item.lastEventAt}`}</li>`,
+		)
+		.join('');
 const html = (snapshot: CockpitSnapshot) =>
-	`<main><h1>Sonde M0 cockpit</h1><section><h2>State and freshness</h2><p>as of ${snapshot.asOf}; cursor ${snapshot.cursor}</p></section><section><h2>Candidate funnel</h2><p>documents ${snapshot.funnel.documents}; transactions ${snapshot.funnel.transactions}; qualifying purchases ${snapshot.funnel.qualifyingPurchases}</p></section><section><h2>Recent Source Facts</h2><ul>${snapshot.facts.map((fact) => `<li>${escapeHtml(fact.issuerName)}: ${escapeHtml(fact.transactionCode)} ${fact.shares} @ ${fact.pricePerShare}</li>`).join('') || '<li>No retained facts</li>'}</ul></section><section><h2>Source and market-data health</h2><ul>${snapshot.health.map((health) => `<li>${escapeHtml(health.job)}: ${escapeHtml(health.freshness)}${health.freshness === 'unseen' ? '' : ` (${escapeHtml(health.outcome ?? health.job)}) at ${health.lastEventAt}`}</li>`).join('')}</ul></section><section>Later milestones: not built</section><script>const refresh=()=>fetch('/api/snapshot').then(r=>r.json()).then(()=>location.reload());const e=new EventSource('/api/events');e.onmessage=refresh;e.onerror=refresh;</script></main>`;
+	`<main><h1>Sonde M0 cockpit</h1><section><h2>State and freshness</h2><p>as of ${snapshot.asOf}; cursor ${snapshot.cursor}</p></section><section><h2>Candidate funnel</h2><p>documents ${snapshot.funnel.documents}; transactions ${snapshot.funnel.transactions}; qualifying purchases ${snapshot.funnel.qualifyingPurchases}</p></section><section><h2>Recent Source Facts</h2><ul>${factItems(snapshot.facts)}</ul></section><section><h2>Source and market-data health</h2><ul>${healthItems(snapshot.health)}</ul></section><section>Later milestones: not built</section><script>const refresh=()=>fetch('/api/snapshot').then(r=>r.json()).then(()=>location.reload());const e=new EventSource('/api/events');e.onmessage=refresh;e.onerror=refresh;</script></main>`;
 const login =
 	'<form method="post" action="/session"><label>Operator token <input name="token" type="password" autofocus></label><button>Open cockpit</button></form>';
 const streamEvents = (request: Request, url: URL, reader: CockpitReader): Response => {
