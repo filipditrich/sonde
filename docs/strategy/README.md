@@ -1,36 +1,35 @@
 # Strategy
 
-What Sonde is looking for, and how a conclusion becomes a position.
+This folder defines the market hypothesis and exact rules that turn evidence into prospective
+claims and paper exposure. The architecture is reusable only where the settled seams require it;
+Strategy V1 itself is concrete.
 
-The rest of `docs/` describes the machine — how data moves, what is enforced, what is measured.
-This folder describes the **thesis**: what edge Sonde is hunting and the rules that turn evidence
-into exposure. Without it the architecture is a very well-built system with nothing to do.
+## Strategy V1 in one paragraph
+
+The Insider Cluster Strategy emits a long Signal when at least two distinct Section 16 reporting-
+owner CIKs make qualifying Form 4 code-`P` purchases in the same liquid Issuer and Decision Window.
+It closes the window at 09:20 ET, targets the next regular-session opening auction, and measures the
+Signal through the close twenty subsequent sessions later. A single owner, an illiquid listing, or a
+late filing does not qualify that window.
+
+Cross-source research and LLM analysis are future annotations around this deterministic baseline,
+not launch requirements. They must earn bounded influence through sealed forward evaluation.
 
 ## Reading order
 
-| Doc                                                | What it settles                                                               |
-| -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| [`anatomy-of-a-trade.md`](./anatomy-of-a-trade.md) | One event traced end to end, minute by minute — the design's integration test |
-| `charter.md` _(next)_                              | Edge, universe, holding period, what Sonde will not trade                     |
-| `position-lifecycle.md` _(next)_                   | Entry, sizing, management, exit                                               |
-| `scoring.md` _(next)_                              | How a signal resolves, what `flat` means, calibration                         |
+| Document                                                                 | What it settles                                                          |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [`charter.md`](./charter.md)                                             | Edge, universe, timing, sizing, correlation, and exclusions              |
+| [`anatomy-of-a-trade.md`](./anatomy-of-a-trade.md)                       | One complete Signal and paper position traced through the evidence spine |
+| [`../specs/strategy-v1.md`](../specs/strategy-v1.md)                     | Executable strategy, planning, and execution contract                    |
+| [`../specs/scoring-and-promotion.md`](../specs/scoring-and-promotion.md) | Outcomes, benchmarks, analyst evaluation, and promotion                  |
 
-## The edge, in one paragraph
+## Evidence status
 
-Sonde does not trade any single source. It trades when **independent classes of evidence agree** —
-a first-party venue announcement, an on-chain flow, a shift in attention, a reported story. Any one
-of those alone is noise or is already priced. The bet is that agreement _across kinds of evidence_,
-detected quickly and sized modestly, carries more information than any of them separately.
+The founding study and its preregistered out-of-sample check support designing around the cluster,
+liquidity threshold, and horizon. They do not eliminate survivorship, cost, regime, or portfolio
+risk. The live Strategy Scorecard is the remedy.
 
-This is chosen partly because it is the only strategy that uses the whole probe architecture, and
-partly because it produces the most interesting scoreboard: each class can be credited separately,
-so after a few months Sonde can say which kinds of evidence actually carry information — which is a
-more durable thing to learn than a P&L figure.
-
-## Convention
-
-Anything that cannot be settled without seeing real data is marked:
-
-> **Assumes:** the claim, and what would confirm or refute it.
-
-These are tracked and checked before the code that depends on them is written.
+Unmeasured choices are labelled as policy or guesses rather than laundered into the historical
+result. The full evidence is in
+[`../research/insider-filing-gap-study.md`](../research/insider-filing-gap-study.md).

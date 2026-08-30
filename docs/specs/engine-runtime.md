@@ -1,6 +1,6 @@
 # Engine runtime
 
-**Status:** proposed · **Milestone:** 0 · **Consumes:** `@sonde/probes`, `@sonde/db`
+**Status:** accepted contract · **Milestone:** 0 · **Consumes:** `@sonde/probes`, `@sonde/db`
 
 How `apps/engine` schedules work, survives restarts, and reports its own health. Written before the
 app exists because two of the decisions below shape the database schema, and retrofitting them is
@@ -17,19 +17,24 @@ Worth stating plainly, because it rules out an architecture the earlier docs ass
 | EDGAR live poll            | ~5 min                | minutes              |
 | EDGAR daily reconciliation | daily                 | hours                |
 | Price bars + ADV           | daily, after close    | hours                |
-| Signal emission            | after each EDGAR poll | seconds              |
+| Candidate snapshots        | after each EDGAR poll | seconds              |
+| Decision cutoff + entry    | 09:20–09:28 ET        | seconds              |
 | Signal resolution          | daily                 | hours                |
-| Order placement _(M4)_     | market open           | seconds              |
+| Horizon exit staging       | before 15:50 ET       | seconds              |
 
-**Nothing here is streaming.** Cadences run minutes to daily, and the trading horizon is twenty
-sessions. [`architecture.md`](../architecture.md) proposed an in-process event bus with a
-Postgres-backed outbox; that was written when the design assumed continuous crypto markets and an
-LLM in the entry path. **This is a cron-shaped workload**, and a bus would be machinery for a
-problem Sonde does not have.
+**The strategy workload is not stream-shaped.** Cadences run minutes to daily, and the trading
+horizon is twenty sessions. Broker trade updates later arrive as a stream for cockpit immediacy,
+but durable REST reconciliation remains authoritative. Sonde therefore needs schedules and one
+adapter stream, not a general internal event bus.
 
-## D1 — One process, one tick loop
+## D1 — One process, two scheduling lanes
 
-`apps/engine` is a single long-lived Bun process with a tick loop over a declarative job registry.
+`apps/engine` is a single long-lived Bun process with two isolated schedulers over durable Postgres
+state ([ADR 0018](../decisions/0018-scheduled-work-priority-market-actions.md)):
+
+- an ordinary lane for probes, reconciliation, snapshots, resolution, and housekeeping;
+- a priority market-action lane for the 09:20 Decision Cutoff, opening-auction submission,
+  close-auction staging, and post-auction reconciliation.
 
 ```ts
 type Job = {
@@ -39,36 +44,33 @@ type Job = {
 };
 ```
 
-The loop wakes every 30s, asks each job whether it is due, and runs those that are — sequentially,
-because nothing here is throughput-bound and sequential execution makes the logs readable.
+Ordinary work cannot delay a due priority action. Both lanes use idempotent operations and durable
+run records, so restart recovery reconstructs intent from Postgres rather than memory.
 
-**No supervisor, no worker pool, no queue.** Process death is handled by the restart policy of
-whatever runs it. If a second process is ever genuinely needed, the job registry is the seam to
-split on.
+**No external queue broker and no distributed worker pool.** Process death is handled by the restart
+policy of whatever runs it. The lane boundary is the seam if separate processes ever become
+necessary.
 
-## D2 — Deterministic ids, so restart recovery costs nothing
+## D2 — Idempotency follows domain identity
 
-**The important decision.** `pollOnce` currently returns a `seen` set of accession numbers, which
-implies somewhere to persist it, which implies a state table and a crash-consistency story.
+Repeated acquisition is evidence, while repeated derivation from the same captured inputs is not a
+new fact. IDs therefore follow the semantics of each artifact instead of applying one deduplication
+rule to the entire pipeline.
 
-Instead: **derive every id deterministically from the source's own identifiers, and let the database
-reject duplicates.**
+| Artifact            | Identity rule                                                          |
+| ------------------- | ---------------------------------------------------------------------- |
+| Acquisition Attempt | Fresh time-ordered id for each real request                            |
+| Source Document     | SHA-256 of exact bytes                                                 |
+| Source Fact         | Source Document hash + parser version + stable fact locator            |
+| Candidate Snapshot  | Strategy/version + Issuer + Decision Window + ordered Input References |
+| Signal              | Strategy/version + Issuer + closed Decision Window                     |
+| Order Proposal      | Planning Decision identity                                             |
+| Broker submission   | Proposal + execution intent + explicit attempt ordinal                 |
 
-| Row             | Id derivation                               |
-| --------------- | ------------------------------------------- |
-| `raw_documents` | `sha256(content)` — already the primary key |
-| `observations`  | `uuidv5(accession + document)`              |
-| `signals`       | `uuidv5(eventClusterId + analyst version)`  |
-
-Every write is `ON CONFLICT DO NOTHING`. Re-processing a filing is then a **no-op**, which means:
-
-- A crash mid-poll needs no recovery — the next poll re-reads and re-writes harmlessly
-- The `seen` set becomes a within-poll optimisation, held in memory, discarded freely
-- No probe state table, no checkpointing, no partial-write reasoning
-- Re-running the whole day is safe, which makes the daily reconciliation below trivial
-
-The tradeoff is a wasted fetch on restart. At 150ms per request and a feed of 100 entries, that is
-under a minute — a good trade for deleting an entire class of bug.
+Source-derived and decision writes reject semantic duplicates. Acquisition attempts do not: a
+retry is a new historical fact even when it returns identical bytes. On an ambiguous broker
+response, recovery queries by the deterministic client-order identity before creating another
+attempt ordinal.
 
 ## D3 — Live feed for latency, daily index for completeness
 
@@ -119,46 +121,56 @@ clock times.
 
 ## D5 — Failures are isolated and recorded
 
-Every job run writes a row **before and after** it runs:
+Every job run appends lifecycle events rather than updating a run row:
 
 ```
-job_runs(id, job, started_at, finished_at, outcome, items, error, meta)
+JobRunStarted(runId, job, startedAt, policyVersion)
+JobRunFinished(runId, finishedAt, outcome, items, meta)
+JobRunFailed(runId, failedAt, error, meta)
 ```
 
-- A job that throws is caught, recorded, and does not touch the others
-- Consecutive failures set an unhealthy flag; the health panel reads this table directly
+- A job that throws is caught, recorded, and does not touch the other ordinary jobs or the priority
+  lane
+- Consecutive failures derive an unhealthy status; any mutable health projection is a disposable
+  cache over the append-only events
 - `meta` carries per-job detail — filings seen, code-`P` emitted, gap flags from D3
 
 This table is also the substrate for the dead-man's switch in Milestone 3, so it is worth getting
 right now rather than bolting a second mechanism on later.
 
-## D6 — One transaction per filing, raw document first
+## D6 — Acquisition is durable before derivation
 
-[ADR 0008](../decisions/0008-append-only-signal-log.md) requires the raw payload to be persisted
-before anything derived from it. Enforced structurally rather than by ordering discipline:
+[ADR 0021](../decisions/0021-immutable-evidence-lineage-and-dual-replay.md) requires an Acquisition
+Attempt and immutable Source Document before any derived Source Facts. Enforced structurally rather
+than by ordering discipline:
 
 ```
 BEGIN
-  INSERT INTO raw_documents … ON CONFLICT DO NOTHING
-  INSERT INTO observations … ON CONFLICT DO NOTHING   -- FK to raw_documents
+  INSERT INTO acquisition_attempts …
+  INSERT INTO source_documents … ON CONFLICT DO NOTHING
+  INSERT INTO acquisition_documents …
+COMMIT
+
+BEGIN
+  INSERT INTO parse_runs …
+  INSERT INTO source_facts … ON CONFLICT DO NOTHING   -- typed Input Reference to Source Document
 COMMIT
 ```
 
-The foreign key makes the wrong order impossible, and the transaction makes a half-written filing
-impossible. Combined with D2, a crash anywhere leaves the database consistent and the next poll
-finishes the job.
+The first transaction preserves what Sonde fetched even if parsing fails. The second either appends
+a complete typed fact set or a parse-failure event; it cannot erase the acquisition. Combined with
+D2, a crash leaves recoverable evidence and the next run derives the same semantic facts.
 
 ## What runs where
 
-Locally under `bun dev` for Milestone 0. The engine needs an always-on host eventually — it must
-hold a schedule and, from Milestone 4, act at the open. **Deployment target is deliberately not
-decided here**; nothing in this spec depends on it.
+Milestone 0 may run interactively under `bun dev`. Before Milestone 4, the engine and web app run as
+separately supervised processes on one always-on host with colocated Postgres, automatic process
+restart, synchronized clock, sleep disabled during operation, and startup reconciliation. One simple
+automated backup copy lives outside the live data directory. See
+[ADR 0029](../decisions/0029-simple-local-operations.md).
 
 ## Open
 
-- **Does order placement live in this process?** Probably yes at Milestone 4 — but it is the one job
-  with a hard latency requirement (the open), and mixing it with a sequential tick loop that might
-  be mid-reconciliation deserves a second look then.
 - **Backpressure on a filing storm.** 870/day is comfortable; a 10× day would push the live poll
   past its own interval. The tick loop should skip a job that is still running rather than stacking
   runs, but the behaviour beyond that is unspecified.

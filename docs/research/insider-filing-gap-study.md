@@ -5,17 +5,24 @@
 Resolves assumption **A4** — _overnight gaps are usually small enough to trade through_ — and in
 doing so refutes two design proposals that were about to be built.
 
+> **2026-08-30 implementation erratum:** the study and scripts call the liquidity window “20
+> sessions,” but the Python slice `ss[max(0, i - 20) : i + 1]` includes 21 completed bars when a
+> full history is available. The reported cohorts therefore use a 21-bar median. Strategy V1 fixes
+> the production contract at exactly twenty completed bars. A Milestone 1 parity spike must measure
+> the cadence and cohort difference before the research baseline is used as an implementation
+> oracle. The historical results below are preserved rather than retroactively rewritten.
+
 ## Method
 
-|                 |                                                                                  |
-| --------------- | -------------------------------------------------------------------------------- |
-| Filings         | SEC structured Form 345 datasets, 2025 Q3 – 2026 Q1 (9 months)                   |
-| Universe        | 121,748 Form 4 submissions → **14,644 code-`P` open-market acquisitions**        |
-| Events          | Collapsed to **6,622 distinct (ticker, filing-date)** pairs; 15.2% multi-insider |
-| Prices          | Alpaca daily bars, SIP feed, split-adjusted — 363,114 bars across 1,792 tickers  |
-| Entry           | Open of the session after the filing date                                        |
-| Reference       | Close of the filing date                                                         |
-| Liquidity split | Median 20-session dollar volume, $20m threshold                                  |
+|                 |                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------- |
+| Filings         | SEC structured Form 345 datasets, 2025 Q3 – 2026 Q1 (9 months)                        |
+| Universe        | 121,748 Form 4 submissions → **14,644 code-`P` open-market acquisitions**             |
+| Events          | Collapsed to **6,622 distinct (ticker, filing-date)** pairs; 15.2% multi-insider      |
+| Prices          | Alpaca daily bars, SIP feed, split-adjusted — 363,114 bars across 1,792 tickers       |
+| Entry           | Open of the session after the filing date                                             |
+| Reference       | Close of the filing date                                                              |
+| Liquidity split | Labelled 20-session dollar volume; implemented with 21 completed bars, $20m threshold |
 
 **Benchmark:** every ticker, every session, same windows, pooled — a crude control that is negative
 throughout (median −0.07% to −0.17%, win rate 47–49%), which is what makes the comparisons below

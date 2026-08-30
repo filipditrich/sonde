@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Milestone 2, 2026-08-27)
+Superseded by [0018](./0018-scheduled-work-priority-market-actions.md) (2026-08-29). The decision to avoid timer-manufactured model opinions remains; 0018 replaces the continuous-market event-bus runtime with scheduled work and an isolated market-action lane.
 
 ## Context
 

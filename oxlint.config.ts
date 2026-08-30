@@ -4,9 +4,9 @@ import { defineConfig } from 'oxlint';
  * Sonde lint gates.
  *
  * Architectural invariants are carried as *rules*, not prose. The two that matter most —
- * the reasoning plane cannot reach a venue (ADR 0005) and CCXT does not leak out of
- * `packages/venue` (ADR 0002) — are enforced here rather than trusted to review. An agent
- * obeys what fails and skims what is documented.
+ * risk cannot reach a model and analysis cannot reach planning, risk, or a venue (ADR 0015) —
+ * are enforced here rather than trusted to review. An agent obeys what fails and skims what
+ * is documented.
  *
  * The restricted-import lists may only ever grow.
  */
@@ -16,35 +16,39 @@ const RESTRICTED_PACKAGES = [
 	['backtesting', 'No backtesting engine for the LLM path. See docs/decisions/0004-no-llm-backtests.md.'],
 	['grademark', 'No backtesting engine for the LLM path. See docs/decisions/0004-no-llm-backtests.md.'],
 	['backtest', 'No backtesting engine for the LLM path. See docs/decisions/0004-no-llm-backtests.md.'],
+	['ccxt', 'Crypto venue infrastructure is outside the active application. See docs/decisions/0020-strategy-v1-common-equities-only.md.'],
 	['moment', 'Use Temporal or date-fns. Market data is timestamp-heavy and moment is mutable.'],
 ] as const satisfies ReadonlyArray<readonly [string, string]>;
 
 const toPaths = (entries: ReadonlyArray<readonly [string, string]>) => entries.map(([name, message]) => ({ name, message }));
 
-/** the gate must not be able to reach a model, a venue, or the network — ADR 0005 */
+/** the gate must not be able to reach a model, a venue, or the network — ADR 0015 */
 const RISK_FORBIDDEN = [
 	{
 		group: ['@sonde/agents', '@sonde/agents/*'],
-		message: 'The risk gate must not be able to import a model. See docs/decisions/0005-llm-proposes-code-disposes.md.',
+		message: 'The risk gate must not be able to import a model. See docs/decisions/0015-deterministic-planning-promotable-analysis.md.',
 	},
 	{
 		group: ['@sonde/venue', '@sonde/venue/*'],
-		message: 'The gate decides; it does not execute. See docs/decisions/0005-llm-proposes-code-disposes.md.',
+		message: 'The gate decides; it does not execute. See docs/decisions/0015-deterministic-planning-promotable-analysis.md.',
 	},
 	{
 		group: ['@anthropic-ai/sdk', '@anthropic-ai/sdk/*'],
-		message: 'No model in the enforcement plane. See docs/decisions/0005-llm-proposes-code-disposes.md.',
+		message: 'No model in the enforcement plane. See docs/decisions/0015-deterministic-planning-promotable-analysis.md.',
 	},
-	{ group: ['ccxt', 'ccxt/*'], message: 'No venue client in the enforcement plane. See docs/decisions/0005-llm-proposes-code-disposes.md.' },
+	{
+		group: ['openai', 'openai/*'],
+		message: 'No model in the enforcement plane. See docs/decisions/0015-deterministic-planning-promotable-analysis.md.',
+	},
 ];
 
-/** the reasoning plane is advisory — it has no execution path — ADR 0005 */
+/** the analyst runtime is advisory and cannot construct or approve execution — ADR 0015 */
 const AGENTS_FORBIDDEN = [
 	{
-		group: ['@sonde/venue', '@sonde/venue/*'],
-		message: 'Agents emit proposals, never orders. See docs/decisions/0005-llm-proposes-code-disposes.md.',
+		group: ['@sonde/planning', '@sonde/planning/*', '@sonde/risk', '@sonde/risk/*', '@sonde/venue', '@sonde/venue/*'],
+		message:
+			'Analysts emit annotations, never proposals, risk decisions, or orders. See docs/decisions/0015-deterministic-planning-promotable-analysis.md.',
 	},
-	{ group: ['ccxt', 'ccxt/*'], message: 'Agents emit proposals, never orders. See docs/decisions/0005-llm-proposes-code-disposes.md.' },
 ];
 
 export default defineConfig({
@@ -106,21 +110,6 @@ export default defineConfig({
 			files: ['packages/agents/**'],
 			rules: {
 				'no-restricted-imports': ['error', { paths: toPaths(RESTRICTED_PACKAGES), patterns: AGENTS_FORBIDDEN }],
-			},
-		},
-		{
-			/** CCXT is wrapped by packages/venue and does not leak — ADR 0002 */
-			files: ['packages/probes/**', 'packages/core/**', 'packages/db/**', 'apps/web/**'],
-			rules: {
-				'no-restricted-imports': [
-					'error',
-					{
-						paths: toPaths(RESTRICTED_PACKAGES),
-						patterns: [
-							{ group: ['ccxt', 'ccxt/*'], message: 'Venue access goes through @sonde/venue. See docs/decisions/0002-crypto-first-ccxt.md.' },
-						],
-					},
-				],
 			},
 		},
 		{

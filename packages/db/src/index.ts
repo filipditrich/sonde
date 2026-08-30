@@ -8,5 +8,5 @@
  */
 
 export * from './client';
-export * from './point-in-time';
+export * from './milestone-zero';
 export * from './schema';

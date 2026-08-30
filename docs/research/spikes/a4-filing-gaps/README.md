@@ -1,6 +1,6 @@
 # Spike A4 — insider-filing overnight gaps
 
-Scripts that produced [`../insider-filing-gap-study.md`](../insider-filing-gap-study.md). Research
+Scripts that produced [`../../insider-filing-gap-study.md`](../../insider-filing-gap-study.md). Research
 code, not product code: no tests, no error handling worth the name, kept for reproducibility.
 
 ## Reproduce

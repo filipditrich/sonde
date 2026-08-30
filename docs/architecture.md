@@ -1,205 +1,259 @@
 # Architecture
 
-## The shape of the thing
+Sonde is a point-in-time evidence system that happens to paper-trade. Its architectural product is
+an immutable explanation of what it acquired, knew, concluded, declined, proposed, executed, and
+later learned.
 
-Sonde is four planes with one hard boundary between the third and fourth. Everything upstream of
-the risk gate is advisory. Everything downstream is deterministic.
+The active scope is deliberately narrow: one deterministic insider-cluster strategy, US-listed
+common equities, one Alpaca paper account, one Postgres database, and one private operator.
+
+## System shape
 
 ```mermaid
 flowchart TB
-    subgraph collect["Collection plane"]
-        P1[probe: exchange OHLCV]
-        P2[probe: GDELT / RSS]
-        P3[probe: on-chain]
-        P4[probe: filings, macro]
+    subgraph sources[Public and broker sources]
+        SEC[SEC EDGAR]
+        SIP[Alpaca delayed SIP bars]
+        IEX[Alpaca IEX indication]
+        BR[Alpaca paper]
+        RS[Bounded research sources]
     end
 
-    BUS[(event bus)]
-    STORE[(Postgres + raw blobs)]
-
-    subgraph reason["Reasoning plane — advisory only"]
-        TRIAGE["analyst: triage<br/>Haiku 4.5, batched"]
-        DEEP["analyst: deep read<br/>Opus 5, escalated only"]
-        PM["portfolio agent<br/>Opus 5, tool-use"]
+    subgraph evidence[Evidence plane]
+        ACQ[Acquisition]
+        DOC[Source Documents]
+        FACT[Source Facts]
+        CAND[Candidate Snapshots]
     end
 
-    subgraph enforce["Enforcement plane — deterministic"]
-        RISK{{"risk gate<br/>hard limits, no model"}}
-        RECON["reconciler<br/>venue = source of truth"]
+    subgraph decision[Decision plane]
+        STRAT[Insider Cluster Strategy]
+        CUT[09:20 Decision Cutoff]
+        ELIG[Eligibility Decision]
+        SIG[Signal + Decision Packet]
+        READY[Data Readiness]
+        PLAN[Portfolio Planner]
+        PROP[Order Proposal]
     end
 
-    VENUE[["venue adapter (CCXT)<br/>paper / testnet"]]
-    UI["dashboard<br/>Next.js"]
+    subgraph enforcement[Enforcement and execution]
+        RISK{{Risk Gate}}
+        VENUE[Alpaca paper adapter]
+        RECON[Reconciler]
+    end
 
-    P1 & P2 & P3 & P4 --> BUS
-    BUS --> STORE
-    BUS --> TRIAGE
-    TRIAGE -->|"above threshold"| DEEP
-    TRIAGE -.->|"below threshold, logged"| STORE
-    DEEP --> PM
-    PM -->|"proposed order"| RISK
-    RISK -->|"accepted"| VENUE
-    RISK -.->|"rejected + reason"| STORE
-    VENUE <--> RECON
-    RECON --> STORE
-    STORE --> UI
+    subgraph learning[Measurement and optional analysis]
+        SCORE[Strategy and Execution Scorecards]
+        ANALYST[Analyst Runtime]
+        ANNO[Analyst Annotation]
+        PROMOTE[Operator Promotion Decision]
+    end
+
+    LEDGER[(Postgres evidence ledger)]
+    COCKPIT[Cockpit]
+
+    SEC & SIP --> ACQ --> DOC --> FACT --> STRAT --> CAND --> CUT --> ELIG --> SIG
+    SIG --> READY --> PLAN --> PROP --> RISK -->|accepted| VENUE --> BR
+    RISK -.->|rejected| LEDGER
+    BR --> RECON --> LEDGER
+    IEX -.->|labelled indication only| COCKPIT
+
+    ACQ & DOC & FACT & CAND & ELIG & SIG & READY & PLAN & PROP & RISK & VENUE --> LEDGER
+    LEDGER --> SCORE --> COCKPIT
+    SIG --> ANALYST
+    RS --> ANALYST --> ANNO --> LEDGER
+    ANNO --> PROMOTE -.->|bounded future policy influence| STRAT
+    LEDGER --> COCKPIT
 ```
 
-**The boundary is the whole design.** A model that hallucinates, misreads a headline, or is
-prompt-injected by hostile text in a news article can propose whatever it likes. It emits a typed
-order proposal into a function it does not control. That function checks position caps, daily loss
-limits, order rate, and sanity bounds, and returns accept or reject-with-reason. Both outcomes are
-stored and rendered. See [ADR 0005](./decisions/0005-llm-proposes-code-disposes.md).
+The risk gate is a hard seam: `packages/risk` cannot import the Analyst Runtime, a venue adapter, or
+network clients. The model never creates an Order Proposal and never reaches execution. Strategy
+V1 does not require a model at all.
 
 ## Planes
 
-### 1. Collection
+### Evidence
 
-Probes are small, independent, single-purpose collectors. Each one normalizes its output to a
-common envelope and publishes to the bus. A probe never interprets, never scores, never trades — it
-fetches, normalizes, deduplicates, and timestamps.
+Acquisition adapters fetch configured Candidate Sources. Every real request appends an Acquisition
+Attempt. Exact returned bytes become a content-addressed Source Document before parsing. Parsers
+emit typed Source Facts for all relevant source content, including Form 4 transactions Strategy V1
+does not use.
 
-Every raw payload is persisted before any processing, keyed by content hash. This gives us
-replayability: any pipeline change can be re-run against the exact bytes the original run saw.
+Facts retain their domain-specific Source Clocks—SEC acceptance time and transaction date are not
+the same event—and their `observedAt` and `recordedAt` Knowledge Clocks. Derived artifacts use typed
+Input References. Evidence Relations such as `supports`, `undercuts`, and `propagation` add meaning
+without replacing exact computation inputs.
 
-Two timestamps on every observation, always:
+SEC CIK identifies an Issuer. Effective-dated Listings and Broker Assets map that issuer to a
+tradable security and Alpaca identifier. Ticker is an attribute, never identity.
 
-- `observed_at` — when Sonde saw it
-- `occurred_at` — when the underlying event happened (publisher timestamp, block time, bar close)
+### Decision
 
-Analysts are only ever shown data where `observed_at <= now`. This is enforced in the query layer,
-not by convention.
+The Insider Cluster Strategy consumes Source Facts and appends Candidate Snapshots. A Candidate is
+eligible when at least two distinct reporting-owner CIKs filed qualifying code-`P` purchases for the
+same liquid Issuer in the same Decision Window.
 
-### 2. Reasoning
+At 09:20 America/New_York on an executable session, the strategy closes the window. It appends one
+Eligibility Decision and at most one final Signal, then freezes a Decision Packet naming every
+versioned input used. Late facts belong to the next Decision Window.
 
-The reasoning plane converts observations into typed `Signal` records. A signal is:
+The Signal is a prospective market claim, not an order. It always resolves from the next
+regular-session open through the close twenty subsequent sessions later, whether Sonde traded it or
+not.
 
-```ts
-type Signal = {
-	id: string;
-	asset: string;
-	direction: 'long' | 'short' | 'flat';
-	confidence: number; // 0..1, calibration tracked over time
-	horizon: string; // ISO 8601 duration, e.g. "PT4H"
-	rationale: string; // the model's own words
-	sourceIds: string[]; // provenance — every document that fed this
-	analyst: string; // prompt + model version that produced it
-	createdAt: string;
-};
-```
+Data Readiness checks the exact calendar, universe, SIP data, source completeness, portfolio, and
+broker reconciliation needed for an entry. The Portfolio Planner appends a Planning Decision for
+every eligible Signal and creates an Order Proposal only while Active and ready. Reasons such as
+`already_held`, `below_minimum_order`, and `not_ready` remain part of the forward evidence.
 
-`rationale` and `sourceIds` are not optional. A signal without a traceable cause is a bug
-([ADR 0008](./decisions/0008-append-only-signal-log.md)).
+### Enforcement and execution
 
-Two tiers, because inference is the only real cost:
+The Risk Gate is deterministic and side-effect free. Its interface accepts an immutable Order
+Proposal and risk snapshot and returns an accepted or rejected Risk Decision with reasons. It owns
+position, sector, daily-loss, rate, price, operational-state, kill-switch, and dead-man checks; it
+does not fetch missing inputs or submit an order.
 
-- **Triage** (Haiku 4.5) — batched, scores many items per call, filters aggressively.
-- **Deep read** (Opus 5) — only for items that clear the triage threshold.
+The Alpaca adapter is paper-only. Entry uses whole-share market-on-open orders after the 09:20
+cutoff and before Alpaca's 09:28 deadline. The 1% Sizing Target is floored to whole shares. Partial
+auction fills stand and are never chased. A post-fill exposure above 1.25% enters Halted without
+automatic liquidation.
 
-See [ADR 0007](./decisions/0007-tiered-model-routing.md) for routing and caching.
+Normal exit is a market-on-close order on the horizon session, staged before 15:50. Rejected,
+unfilled, or fractional-residue cases follow the deterministic fallback until flat and append an
+Execution Exception.
 
-### 3. Enforcement
+Broker trade updates make the cockpit immediate. REST reconciliation at startup, before market
+actions, after ambiguous calls, after auctions, and periodically remains authoritative. Recovery is
+query-first and uses deterministic client-order identities before retrying.
 
-The risk gate is plain TypeScript with no model in the path. It owns:
+### Measurement and analysis
 
-| Check                | Behaviour on breach            |
-| -------------------- | ------------------------------ |
-| Max position size    | Reject order                   |
-| Max daily loss       | Halt all trading until reset   |
-| Max orders per hour  | Reject order                   |
-| Price sanity bounds  | Reject order                   |
-| Kill switch (manual) | Halt, flatten nothing          |
-| Dead-man's switch    | Halt if no heartbeat in N mins |
+Every final Signal enters the Strategy Scorecard. The primary metric is median Signal Excess Return
+against the date-matched point-in-time eligible-universe median. Raw returns, hit rate, tails,
+resolution coverage, SIC and SPY comparisons, and Unresolvable Outcomes remain visible.
 
-The reconciler treats the venue as authoritative
-([ADR 0009](./decisions/0009-venue-is-source-of-truth.md)). Local state is a cache that gets
-corrected, never a ledger that gets trusted. Orders carry client-generated idempotency keys so a
-crash between submit and record cannot double-fill.
+The Execution Scorecard separately reports broker equity, time-weighted return, P&L, drawdown,
+exposure, turnover, fill variance, and versioned Realism Outcomes. Paper fills, canonical Signal
+Outcomes, and estimated realism never overwrite one another.
 
-### 4. Presentation
+Milestone 6 introduces one pinned Analyst Runtime behind a Sonde-owned interface. Deterministic code
+bounds the evidence, then one high-quality model call emits an Analyst Annotation. Requests,
+responses, validation, usage, latency, and failures are immutable. The runtime exposes no venue,
+control, database-write, or general network tool.
 
-A Next.js dashboard, read-mostly, over the same Postgres. The surfaces that matter:
+Analyst behavior is forward-scored in sealed Evaluation Epochs. Only authenticated Promotion
+Decisions can grant confidence, eligibility-reduction, or sizing-reduction influence, one capability
+at a time. Initial model influence can only veto or reduce the deterministic baseline.
 
-- **Live tape** — signals and orders as they happen, each expandable into its full reasoning trail
-- **Trade detail** — source documents → analyst rationale → proposed order → gate decision → fill
-- **Analyst scoreboard** — realized hit rate and calibration per source, per analyst, per prompt version
-- **Blocked** — what the risk gate rejected and why, which is often more interesting than the fills
-- **Cost** — token spend by tier and by probe, against budget
+### Operations and presentation
 
-## Storage
+One engine process contains an ordinary scheduled lane and an isolated priority market-action lane.
+They coordinate through durable Postgres state; there is no internal queue broker. Ordinary
+acquisition or reconciliation work cannot delay a cutoff or auction action.
 
-Single Postgres instance. TimescaleDB extension if and when bar volume justifies it — not before.
+The private cockpit is operations-first: state and readiness, market clock and next action, alerts,
+candidate funnel, decision tape, positions, exposure, and scorecard summaries. Server-Sent Events
+carry resumable event references; REST snapshots render authoritative state.
 
-| Table            | Holds                                   | Mutability   |
-| ---------------- | --------------------------------------- | ------------ |
-| `raw_documents`  | Content-hashed original payloads        | Immutable    |
-| `observations`   | Normalized probe output                 | Immutable    |
-| `signals`        | Analyst output with rationale + sources | Append-only  |
-| `signal_results` | Resolved outcome at horizon             | Written once |
-| `proposals`      | Portfolio agent order proposals         | Append-only  |
-| `gate_decisions` | Accept/reject with reason               | Append-only  |
-| `orders`         | Submitted orders, idempotency keys      | Append-only  |
-| `fills`          | Venue-reported executions               | Append-only  |
-| `positions`      | Reconciled snapshot                     | Mutable      |
-| `runs`           | Process lifecycle, heartbeats           | Append-only  |
+The Event Console is read-only. Its command palette exposes only authenticated, durable Operator
+Commands. It has no shell or order ticket. The in-app alert inbox is canonical; Telegram receives
+urgent operational alerts.
 
-Nothing in the signal or decision path is ever updated in place. The audit trail is the product.
+## Deep module seams
 
-## Cost model
+The target modules hide policy and lifecycle complexity behind small interfaces. The interface is
+also the test surface.
 
-Venue cost is zero by construction — paper and testnet accounts
-([ADR 0003](./decisions/0003-paper-first-execution.md)). Inference is the only recurring spend.
+| Module             | Interface responsibility                                                   | What remains inside                                                                                            |
+| ------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Acquisition        | Run one configured source acquisition and return its durable outcome       | Rate policy, conditional requests, byte storage, parse lifecycle, retries                                      |
+| Strategy V1        | Advance candidates from Source Facts; close one Decision Window            | owner deduplication, calendar assignment, liquidity policy, snapshots, eligibility, Signal and packet creation |
+| Data Readiness     | Assess one proposed action against one versioned policy                    | freshness, completeness, entitlement, reconciliation, reason codes                                             |
+| Portfolio Planner  | Turn one eligible Signal and portfolio snapshot into one Planning Decision | held-name handling, whole-share sizing, operating state, promoted reductions                                   |
+| Risk Gate          | Decide one immutable proposal against one risk snapshot                    | all deterministic limits and typed rejection reasons                                                           |
+| Venue              | Submit, cancel, and reconcile paper execution intent                       | Alpaca protocol, client IDs, ambiguity recovery, broker event normalization                                    |
+| Outcome Resolver   | Resolve due Signals and execution histories                                | calendar horizon, corporate actions, benchmarks, unresolvable reasons, realism methods                         |
+| Analyst Runtime    | Annotate one bounded evidence packet                                       | provider call, exact versioning, validation, immutable telemetry, failure handling                             |
+| Cockpit Read Model | Produce authoritative snapshots and resumable event references             | projections, filtering, lineage joins, alert state                                                             |
 
-Current per-million-token pricing:
+Source, venue, and model dependencies are true external seams: production adapters and controlled
+test adapters satisfy the same narrow interfaces. Postgres is local-substitutable in tests; database
+details do not leak into the domain interfaces.
 
-| Model     | Input | Output | Role                       |
-| --------- | ----- | ------ | -------------------------- |
-| Haiku 4.5 | $1    | $5     | Triage, extraction         |
-| Sonnet 5  | $3    | $15    | Optional middle tier       |
-| Opus 5    | $5    | $25    | Deep read, order proposals |
+## Evidence ledger
 
-Budget target: **under $30/month** at an event-driven cadence. Three levers, in order of impact:
+All authoritative history is append-only. Mutable tables are disposable projections or broker-state
+caches, never evidence.
 
-1. **Event-driven, not polling.** Wake on an actual event, not a timer. Cheaper and better trading
-   logic at the same time ([ADR 0006](./decisions/0006-event-driven-cadence.md)).
-2. **Tiered escalation.** Haiku filters; Opus only sees what survives.
-3. **Prompt caching.** Stable prefix (system prompt, strategy rules, portfolio state) is cached at
-   ~0.1× input price; volatile content goes last, after the cache breakpoint.
+| Artifact                                           | Purpose                                                | Mutation                 |
+| -------------------------------------------------- | ------------------------------------------------------ | ------------------------ |
+| Acquisition Attempt                                | One source request and response outcome                | Append-only              |
+| Source Document                                    | Exact bytes, hash, media type, parser provenance       | Immutable                |
+| Source Fact                                        | Typed statement parsed from one document               | Append-only              |
+| Candidate Snapshot                                 | Candidate after one evidence or policy transition      | Append-only              |
+| Eligibility Decision                               | Strategy-policy inclusion or exclusion                 | Append-only              |
+| Signal and Decision Packet                         | Prospective claim and exact decision manifest          | Append-only              |
+| Data Readiness                                     | Decision-specific completeness and freshness result    | Append-only              |
+| Planning and Risk Decisions                        | Proposed or declined action and deterministic judgment | Append-only              |
+| Order, Execution Event, reconciliation observation | Paper broker intent and truth                          | Append-only              |
+| Signal, Execution, and Realism Outcomes            | Three distinct result series                           | Written once per version |
+| Analyst artifacts and Promotion Decisions          | Model behavior, evaluation, and operator authority     | Append-only              |
+| Operational Event, Alert, and Command              | Runtime and control history                            | Append-only              |
 
-> **Caching gotcha to design around from day one.** The minimum cacheable prefix is model-dependent
-> and not monotonic: **512** tokens on Opus 5, **1024** on Sonnet 5, but **4096** on Haiku 4.5. A
-> short triage prompt on Haiku silently will not cache — no error, `cache_read_input_tokens` just
-> stays zero. Batching many items into one Haiku call clears the floor and cuts per-item cost at the
-> same time.
+Materialized candidate, position, health, and cockpit projections may be rebuilt from these records.
 
-For research workloads — scoring a historical corpus to build an evaluation set — the Batch API is
-50% off and completes within the hour.
+## Point-in-time and replay
 
-## Repository layout
+Forensic Replay uses the exact Input References and versions captured by a Decision Packet. For an
+LLM call, the preserved request and response are historical truth; a fresh sample is not replay.
 
-```
+Reconstruction Replay is explicitly separate. It may use corrected or newly fetched inputs and
+shows field-level differences from the forensic record. Neither replay mode mutates the original
+decision or outcome.
+
+Authoritative prices, quantities, money, ratios, and returns cross domain interfaces as validated
+decimal strings or scaled integers and persist as database decimals. JavaScript numbers are limited
+to labelled non-authoritative statistics or display.
+
+## Market data
+
+Delayed consolidated SIP daily bars are authoritative for eligibility, prior-close inputs, and
+Signal Outcomes. Sonde verifies the account entitlement and fails readiness if SIP is unavailable;
+it never silently substitutes IEX. Real-time IEX may appear only as a labelled operational
+indication. Broker fills remain authoritative for execution.
+
+## Deployment
+
+Through paper execution, Sonde runs on one always-on machine with separately supervised engine and
+web processes and colocated plain Postgres. Before Milestone 4 it must restart automatically, keep a
+synchronized clock, disable sleep, and reconcile at startup.
+
+One simple automated backup copy lives outside the active data directory. There is no high
+availability, replication, or enterprise recovery program. TimescaleDB waits for measured pressure.
+Model usage and cost are recorded and displayed without an automated budget threshold.
+
+The cockpit requires an operator session on loopback. Future remote access uses a private network
+and strong single-user authentication; it is never directly public.
+
+## Target repository layout
+
+```text
 sonde/
 ├── apps/
-│   ├── engine/        # the loop: probes, analysts, gate, reconciler
-│   └── web/           # Next.js dashboard
+│   ├── engine/       # scheduled and priority lanes; module composition
+│   └── web/          # private cockpit, SSE and authenticated controls
 ├── packages/
-│   ├── core/          # domain types, Signal/Proposal/Order schemas (Zod)
-│   ├── probes/        # collectors, one module per source
-│   ├── agents/        # analyst + portfolio prompts, model routing
-│   ├── risk/          # the gate — deterministic, heavily tested
-│   ├── venue/         # CCXT adapter, idempotency, reconciliation
-│   └── db/            # schema + migrations
+│   ├── core/         # Zod schemas and domain primitives
+│   ├── probes/       # source acquisition and parsing adapters
+│   ├── strategy/     # Insider Cluster Strategy V1
+│   ├── planning/     # deterministic Portfolio Planner and Data Readiness
+│   ├── risk/         # deterministic Risk Gate
+│   ├── venue/        # Alpaca paper adapter and reconciliation
+│   ├── scoring/      # outcome resolution, benchmarks, scorecards
+│   ├── agents/       # pinned Analyst Runtime, introduced at Milestone 6
+│   └── db/           # Postgres schema, transactions, projections
 └── docs/
 ```
 
-`packages/risk` has no dependency on `packages/agents`. That is enforced by the dependency graph,
-not by discipline — the gate must not be able to import a model.
-
-## Runtime
-
-One long-lived process (`apps/engine`) plus the Next.js app. No queue broker initially; the event
-bus is an in-process emitter with a Postgres-backed outbox for durability. If that stops being
-enough, the outbox is already the seam to put a real broker behind.
-
-Deployment target for the engine is a small always-on box — it needs to hold WebSocket connections
-and its own scheduling. The dashboard can go anywhere.
+This is the target layout. The Milestone 0 schemas and packages are intentionally disposable where
+they contradict the accepted ADRs and specs.

@@ -14,6 +14,23 @@
         "typescript": "^5.7.0",
       },
     },
+    "apps/engine": {
+      "name": "@sonde/engine",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sonde/core": "workspace:*",
+        "@sonde/db": "workspace:*",
+        "@sonde/probes": "workspace:*",
+      },
+    },
+    "apps/web": {
+      "name": "@sonde/web",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sonde/core": "workspace:*",
+        "@sonde/db": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "@sonde/core",
       "version": "0.0.0",
@@ -198,7 +215,11 @@
 
     "@sonde/db": ["@sonde/db@workspace:packages/db"],
 
+    "@sonde/engine": ["@sonde/engine@workspace:apps/engine"],
+
     "@sonde/probes": ["@sonde/probes@workspace:packages/probes"],
+
+    "@sonde/web": ["@sonde/web@workspace:apps/web"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.10.12", "", { "os": "darwin", "cpu": "x64" }, "sha512-9nKgKoF6ZOUsM+or0OtNf+TTJSfGvDNP7ZFv/ZGWVwOSCkumyctQiTeHwB4UNljHTnC41AqylgbunLDHoccNrA=="],
 

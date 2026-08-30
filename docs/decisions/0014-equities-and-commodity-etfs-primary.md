@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted (Milestone 1, 2026-08-27) — supersedes [0012](./0012-equity-signals-without-equity-execution.md),
-amends the scope of [0002](./0002-crypto-first-ccxt.md)
+Superseded by [0020](./0020-strategy-v1-common-equities-only.md) (2026-08-29). US common equities remain the Strategy V1 market; 0020 removes commodity ETFs and the crypto plumbing testbed from the initial application.
 
 ## Context
 

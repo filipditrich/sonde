@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Milestone 2, 2026-08-27)
+Superseded by 0027 (2026-08-29)
 
 ## Context
 

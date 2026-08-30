@@ -1,71 +1,85 @@
 # Goals and non-goals
 
-## What Sonde is
-
-Sonde is a personal, autonomous market-analysis and paper-trading platform. Probes collect
-unstructured and structured data from public sources, LLM analysts turn that into typed signals
-with their reasoning attached, a portfolio agent proposes orders, and a deterministic risk gate
-decides whether any of it reaches a venue.
-
-The reasoning trail is a first-class product surface, not a debug log. If you cannot watch Sonde
-think, it is not finished.
-
 ## Primary goal
 
-**Build a system that is genuinely interesting to operate and observe.** Success is measured by
-whether the dashboard is worth leaving open — whether you can watch it read the world, form an
-opinion, act or get blocked, and be right or wrong in a way you can inspect afterwards.
+**Build a personal autonomous paper-trading system that is genuinely interesting to operate and
+observe.**
 
-This is a stated, deliberate ordering. Profit is not the top-line metric, and pretending otherwise
-would distort every design decision downstream — most obviously, it would push us toward
-backtest-driven development, which for an LLM-based system produces numbers that mean nothing
-(see [ADR 0004](./decisions/0004-no-llm-backtests.md)).
+Success means the cockpit is worth leaving open because it makes the full causal path legible: what
+Sonde acquired, what was knowable then, which candidate formed, why a Signal did or did not become a
+proposal, what risk and the broker did, and what the strategy and execution later returned.
+
+Profit is not the top-line metric. Treating it as one would invite selective backtests, hide
+operational failures, and collapse strategy, execution, and model quality into one flattering
+number.
 
 ## Secondary goals
 
-1. **Honest evaluation.** Every signal is scored against what actually happened afterwards. Sources
-   and analysts get a track record. Nothing is graded on vibes.
-2. **Cheap to run.** Venue costs are zero by construction (paper/testnet). Inference is the only
-   real recurring cost, and the architecture treats it as a budget to defend — tiered routing,
-   prompt caching, event-driven cadence.
-3. **Safe by construction.** The model can be wrong, hallucinate, or be prompt-injected by a
-   hostile news article. None of that should be able to move money. The risk gate is deterministic
-   code the model cannot reach around.
-4. **Legible.** A stranger reading the repo should understand what it does and why in ten minutes.
+1. **Point-in-time honesty.** Exact source bytes, clocks, identities, inputs, policies, and outcomes
+   remain attributable to the decision that used them.
+2. **Prospective measurement.** Every final Signal resolves, even when it was blocked or unexecuted.
+   Strategy, execution, realism, and analyst performance remain separate.
+3. **Safe autonomy.** Deterministic planning and risk own order creation and admission. Models,
+   hostile source text, and the cockpit cannot bypass those modules.
+4. **Operational legibility.** State, readiness, next action, alerts, non-actions, reconciliation,
+   and replay are product surfaces rather than log archaeology.
+5. **Proportionate simplicity.** One strategy, instrument class, broker, host, database, operator,
+   and model adapter until measured pressure earns another.
+6. **Visible cost.** Source, model, storage, and runtime usage are observable without an arbitrary
+   automated spending policy.
+7. **Repository legibility.** A new contributor can understand the goal, strategy, architecture,
+   and current milestone in one sitting.
 
 ## Explicit non-goals
 
-| Not doing                           | Why                                                                                                                     |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Beating the market                  | Retail systematic trading is negative-sum after costs. Designing for alpha would mean lying to ourselves about results. |
-| Managing anyone else's money        | Personal account, personal capital. Anything else is a regulated activity.                                              |
-| High-frequency or latency arbitrage | Requires colocation and infrastructure that is not available at this budget, and the edges are gone.                    |
-| A self-modifying model              | Continuous autonomous retraining on non-stationary, low-signal data is a machine for overfitting recent noise.          |
-| Financial advice, for anyone        | Not a licensed activity we are in. The repo is public; the output is not a recommendation.                              |
-| Backtested performance claims       | Structurally unavailable for LLM agents. See ADR 0004.                                                                  |
+| Not doing                                                              | Why                                                                              |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Trading real capital                                                   | Paper-only is the safety boundary; changing it requires a new ADR                |
+| Proving market-beating performance                                     | The project is an evidence and operations system, not an alpha claim             |
+| Managing anyone else's money                                           | Sonde is single-user and personal                                                |
+| Discretionary order entry                                              | It would bypass deterministic planning, risk, and lineage                        |
+| Crypto, ETFs, options, futures, shorts, or leverage in the initial app | Strategy V1 has no measured entry path for them                                  |
+| High-frequency or latency arbitrage                                    | The workload is minutes-to-daily and auction-aligned                             |
+| An LLM backtesting engine                                              | Historical outcomes may already exist in model weights; see ADR 0004             |
+| Automatic self-modification or promotion                               | Sparse non-stationary evidence requires sealed evaluation and operator authority |
+| A generic multi-strategy, multi-broker, or multi-model framework       | The initial system has one concrete path to finish and measure                   |
+| Enterprise availability or disaster recovery                           | One always-on personal host and a simple backup are proportionate                |
+| A public market-data dashboard                                         | The cockpit is private and operator-only                                         |
+| Financial advice                                                       | Signals are internal prospective claims, not recommendations                     |
 
-## How "teaching it" actually works
+## What “learning” means
 
-The original instinct was a bot that continuously learns. The honest version of that, given
-non-stationary markets and a model whose weights we do not control:
+Sonde does not retrain itself. It learns through versioned forward evidence:
 
-- **Signals are scored, not the model.** Every signal is resolved against realized price movement
-  at its stated horizon. Sources, analysts, and prompt versions accumulate hit rates and
-  calibration curves.
-- **Prompts and routing are versioned artifacts.** A change to an analyst prompt is a new version
-  with its own track record, promoted or rolled back on evidence.
-- **A human is in the promotion loop.** Sonde surfaces which configurations are performing. It does
-  not silently rewrite its own strategy.
+- deterministic strategy versions own Signals and track records;
+- Analyst Behavior Versions make structured predictions in sealed Evaluation Epochs;
+- scorecards compare those predictions with later point-in-time outcomes;
+- the authenticated operator may append a narrow Promotion Decision or Revocation;
+- promoted model influence initially only vetoes or reduces deterministic behavior.
 
-That is a real learning system. It just puts the operator, not the model, at the point of change.
+Changing a prompt, model, tool contract, output schema, or runtime policy creates a new behavior
+version. Historical outcomes used to design that change cannot validate it.
 
 ## Success criteria
 
 Sonde is working when all of these are true:
 
-- [ ] It runs unattended for a week without manual intervention or a crash.
-- [ ] Every order in the log can be traced back to the source documents that caused it.
-- [ ] The risk gate has blocked at least one order, and the block is legible in the UI.
-- [ ] The analyst scoreboard has enough resolved signals to say something about which sources help.
-- [ ] Monthly inference cost is known, bounded, and under the budget in [`architecture.md`](./architecture.md).
-- [ ] Someone unfamiliar with the project can read the README and understand the point.
+- [ ] It runs unattended on an always-on host through a fortnight containing both entry and exit
+      actions.
+- [ ] Every final Signal is traceable to exact Source Documents, Source Facts, Candidate Snapshots,
+      policy versions, and its Decision Packet.
+- [ ] Every Signal receives one resolved or explicitly Unresolvable Outcome without execution-based
+      selection.
+- [ ] At least one Planning or Risk Decision records a legible non-action and remains visible beside
+      fills.
+- [ ] Startup, pre-action, post-auction, and ambiguous-request reconciliation are demonstrated.
+- [ ] Paused, Degraded, Halted, and Recovering states block entries while position management
+      continues.
+- [ ] The cockpit shows state, readiness, next action, alerts, lineage, positions, and separate
+      scorecards without consulting raw logs.
+- [ ] Forensic Replay reproduces captured inputs, and Reconstruction Replay visibly differs when
+      corrected inputs are supplied.
+- [ ] Model usage and cost are attributable to exact Analyst Behavior Versions once Milestone 6
+      begins.
+- [ ] A new contributor can identify the active strategy, safety boundary, and next milestone from
+      the README and overview.

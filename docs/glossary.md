@@ -1,112 +1,123 @@
 # Glossary
 
-Terms used across these docs, written for someone who builds software but has not traded. Where a
-term has a specific meaning inside Sonde that differs from general usage, that is called out.
+Canonical Sonde domain terms and relationships live in [`../CONTEXT.md`](../CONTEXT.md). This
+glossary explains the market and evaluation language used by those terms.
 
-## Market structure
+## Market and orders
 
-**Order book** — the live list of buy (bid) and sell (ask) offers for an instrument. The best bid
-and best ask define the current market.
+**Regular session** — the standard US equity session, normally 09:30–16:00 US/Eastern. Sonde uses a
+versioned market calendar rather than assuming those times apply every weekday.
 
-**Spread** — the gap between best bid and best ask. You cross it on every round trip, so it is a
-tax on trading frequency. A strategy that is profitable before the spread is often not profitable
-after it.
+**MOO / market-on-open** — a market order intended for the opening auction. Strategy V1 enters with
+Alpaca's `market` + `opg` paper order semantics.
 
-**Slippage** — the difference between the price you expected and the price you got. Grows with
-order size and shrinks with liquidity.
+**MOC / market-on-close** — a market order intended for the closing auction. Strategy V1 stages
+Alpaca's `market` + `cls` paper order semantics for its horizon exit.
 
-**Liquidity** — how much you can trade without moving the price. Thin markets punish size.
+**Spread** — the gap between the best bid and ask. Crossing it is an execution cost omitted or
+idealized by many paper simulators.
 
-**Market order / limit order** — a market order executes now at whatever price is available; a
-limit order executes only at your price or better, and may never execute at all.
+**Slippage** — the difference between an expected reference price and the actual fill. It includes
+spread, timing, queue, and market-impact effects.
 
-**Maker / taker** — a taker removes liquidity from the book (crosses the spread); a maker adds it.
-Most venues charge takers more, and some pay makers.
+**Liquidity** — the ability to trade without materially moving price. Strategy V1's eligibility
+proxy is median daily dollar volume over exactly twenty completed regular-session SIP bars.
 
-**OHLCV** — open, high, low, close, volume: the standard candle/bar aggregation of price over an
-interval.
+**SIP** — the consolidated US Securities Information Processor feed. Sonde's delayed consolidated
+SIP bars are authoritative for decisions; IEX may be shown only as a labelled UI indication.
 
-**Perpetual (perp)** — a futures contract with no expiry, kept near spot price by a periodic
-**funding rate** paid between longs and shorts.
+**OHLCV bar** — open, high, low, close, and volume aggregated for an interval. Timestamps, session,
+feed, adjustment status, and Listing identity are part of the bar's meaning.
 
-**Basis** — the gap between a derivative's price and the spot price of its underlying.
+**Corporate action** — a split, dividend, merger, spin-off, or similar issuer action that changes
+how returns must be calculated. Sonde versions its total-return method and marks cases Unresolvable
+when it cannot establish a defensible value.
 
-## Positions and risk
+**Long / flat** — long exposure benefits when price rises; flat means no position. Strategy V1 is
+long-only.
 
-**Long / short** — long profits when price rises; short profits when it falls.
+## Portfolio and execution
 
-**Flat** — holding no position. In Sonde, a valid signal direction: "I read this and it changes
-nothing" is information.
+**Sizing Target** — desired position value before whole-share rounding. Strategy V1 starts at 1% of
+reconciled paper equity and a promoted analyst may only reduce it.
 
-**Position size** — how much capital is committed to one instrument. Sonde caps this in the risk
-gate as a percentage of account equity.
+**Position Breach Threshold** — the post-fill exposure boundary that triggers a Halted state. It is
+1.25% for Strategy V1 and does not cause automatic liquidation.
 
-**Drawdown** — the decline from a peak in account value. The metric that matters emotionally and
-the one that ends most strategies.
+**Exposure** — capital subject to market movement. Gross exposure sums absolute position values;
+net exposure accounts for direction. Strategy V1 is unlevered and long-only.
 
-**Kill switch** — a manual halt on all new orders. In Sonde it stops trading; it does not liquidate.
+**Drawdown** — decline from a prior peak in account equity.
 
-**Dead-man's switch** — an automatic halt when the engine stops sending heartbeats, so a hung
-process cannot leave positions unmanaged.
+**Partial fill** — only part of an order executes. Strategy V1 keeps an opening partial fill and
+does not chase the remainder after the auction.
 
-**Idempotency key** — a client-generated order id that lets a retry be recognized as the same order.
-Prevents a crash between submit and record from producing a double fill.
+**Reconciliation** — comparing local projections with authoritative broker REST state and appending
+the differences and resulting facts. Streaming broker events are immediate but not authoritative.
+
+**Idempotency key** — stable client order identity used to recognize a retry as the same intent.
+After an ambiguous request Sonde queries by this identity before submitting again.
+
+**Paper trading** — simulated execution against real market data. It is useful for operating and
+forward evaluation but usually understates spread, queue, impact, rejection, and partial-fill risk.
+Sonde records raw paper outcomes separately from versioned Realism Outcomes.
 
 ## Evaluation
 
-**Backtest** — running a strategy over historical data. **For LLM-based systems this is
-structurally unreliable** — see [ADR 0004](./decisions/0004-no-llm-backtests.md).
+**Signal Outcome** — the canonical market result of a Signal, whether or not Sonde traded it. For
+Strategy V1 it is total return from the entry-session open to the close twenty subsequent sessions
+later.
 
-**Forward test / paper trading** — running live against real market data with simulated money. The
-only honest evaluation available to Sonde, and still an optimistic one: paper fills assume you get
-your price with no partial fills and no market impact.
+**Primary Benchmark** — the median same-window return of the Signal's frozen, point-in-time eligible
+universe. Signal Excess Return is the Signal Outcome minus this benchmark.
 
-**Look-ahead bias** — using information the strategy could not have had at that moment. The classic
-form is a data-pipeline bug. The form that matters here is subtler: the model's own training data
-contains the future relative to your test window.
+**Bootstrap Prior** — the historical cohort rate used as a labelled constant baseline. It is not
+event-level confidence and cannot be personalized to a new Signal without forward evidence.
 
-**Survivorship bias** — evaluating over a universe that only contains things that still exist,
-silently deleting the failures.
+**Hit rate** — fraction of resolved outcomes above a declared threshold, such as positive raw return
+or positive Signal Excess Return. The threshold must be stated.
 
-**Point-in-time** — data as it was known at a given moment, including subsequent revisions being
-absent. Sonde enforces this with the `observed_at` / `occurred_at` split.
+**Calibration** — agreement between predicted probabilities and observed frequencies. A behavior
+that predicts 0.7 should see its declared event occur roughly 70% of the time over a suitable sample.
 
-**Hit rate** — fraction of signals that were directionally correct at their stated horizon.
+**Brier score / log loss** — proper scoring rules for probabilistic predictions. Lower is better;
+both penalize unjustified certainty.
 
-**Calibration** — whether stated confidence matches realized frequency. A well-calibrated analyst
-that says 0.7 is right about 70% of the time. High hit rate with poor calibration is not usable for
-sizing.
+**Forward evaluation** — fixing a strategy or analyst behavior before future observations resolve,
+then scoring every eligible result. This is Sonde's basis for analyst promotion.
 
-**Overfitting** — a configuration tuned until it describes past noise. In systematic trading, the
-default outcome of unconstrained search rather than an exotic failure.
+**Backtest** — applying fixed deterministic rules to historical point-in-time data. Deterministic
+components may be backtested. Sonde does not backtest the LLM path because model training data and
+behavior make historical isolation unreliable; see
+[ADR 0004](./decisions/0004-no-llm-backtests.md).
 
-**Sharpe ratio** — return per unit of volatility. Widely quoted, easily inflated by short windows
-and repeated trials.
+**Look-ahead bias** — using information unavailable at the decision time. Sonde prevents it with
+typed Input References, observed and recorded clocks, frozen Decision Packets, and point-in-time
+universe and identity snapshots.
 
-## Sonde-specific
+**Survivorship bias** — evaluating only entities or outcomes that remain easy to observe. Sonde
+keeps every final Signal in the scorecard and exposes Unresolvable outcomes rather than dropping
+them.
 
-**Probe** — a single-purpose collector. Fetches, normalizes, deduplicates, timestamps. Never
-interprets.
+**Forensic Replay** — reproducing projections from the exact captured inputs and versions available
+then.
 
-**Observation** — one normalized item from a probe, with both timestamps and a link to its
-immutable raw payload.
+**Reconstruction Replay** — recomputing against corrected or newly available data and explicitly
+showing differences from the forensic record.
 
-**Signal** — typed analyst output: asset, direction, confidence, horizon, rationale, source ids.
-Advisory. Never reaches a venue on its own.
+## Operations
 
-**Triage / deep read** — the two analyst tiers. Triage is cheap, batched, and filters hard; deep
-read is expensive and only sees what survives triage.
+**Data Readiness** — a versioned, decision-specific proof that every required input is available,
+fresh, authoritative, and internally consistent. It is not one global green light.
 
-**Proposal** — an order the portfolio agent wants to place. Not an order yet.
+**Dead-man condition** — missing expected engine liveness or scheduling evidence. Entry fails closed;
+position management continues when possible.
 
-**Gate decision** — the deterministic accept/reject applied to a proposal, always stored with a
-reason. Rejections are rendered in the UI alongside fills.
+**Pause** — stop new entries while continuing position management, cancellation, reconciliation,
+and scoring.
 
-**Reconciliation** — correcting local state against the venue, which is authoritative. Local state
-is a cache, not a ledger.
+**Halt** — fail-closed operating state caused by a safety or operator action. It blocks new entries
+but does not automatically flatten positions.
 
-**Shadow analyst** — a new prompt version scored live against real data without its signals
-reaching order flow.
-
-**Live gate** — the explicit, documented decision required before Sonde touches real money. Not a
-config flag.
+**Kill switch** — the operator command that enters Halted state. It is not a manual liquidation
+button.

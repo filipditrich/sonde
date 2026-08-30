@@ -1,183 +1,177 @@
 <h1 align="center">Sonde</h1>
 
-<h4 align="center">Autonomous market probes with a glass cockpit — LLM analysts read the world, deterministic code decides what reaches the venue</h4>
+<h4 align="center">Point-in-time market evidence, deterministic paper trading, and a glass cockpit</h4>
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-Milestone%200%20Pipe-0ea5e9?style=for-the-badge" alt="Milestone 0 Pipe" />
-  <img src="https://img.shields.io/badge/execution-paper%20only-16a34a?style=for-the-badge" alt="Paper only" />
-  <img src="https://img.shields.io/badge/stack-TypeScript%20%7C%20Bun%20%7C%20Turborepo-111111?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript | Bun | Turborepo" />
-  <img src="https://img.shields.io/badge/models-Claude%20Opus%205%20%2B%20Haiku%204.5-d97757?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Opus 5 + Haiku 4.5" />
+  <img src="https://img.shields.io/badge/execution-Alpaca%20paper%20only-16a34a?style=for-the-badge" alt="Alpaca paper only" />
+  <img src="https://img.shields.io/badge/market-US%20common%20equities-334155?style=for-the-badge" alt="US common equities" />
+  <img src="https://img.shields.io/badge/stack-TypeScript%20%7C%20Bun%20%7C%20Postgres-111111?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript | Bun | Postgres" />
   <img src="https://img.shields.io/badge/lint-oxlint%20%2B%20oxfmt-c96198?style=for-the-badge" alt="oxlint + oxfmt" />
-  <img src="https://img.shields.io/badge/license-MIT-111111?style=for-the-badge" alt="MIT" />
 </p>
 
-<p align="center">
-  <a href="#what-it-is">What it is</a> ·
-  <a href="#the-constraint-that-shapes-everything">The constraint</a> ·
-  <a href="#architecture-at-a-glance">Architecture</a> ·
-  <a href="#what-it-costs">Cost</a> ·
-  <a href="#status">Status</a> ·
-  <a href="#getting-started">Getting started</a> ·
-  <a href="#documentation">Documentation</a> ·
-  <a href="#disclaimer">Disclaimer</a>
-</p>
+Sonde watches point-in-time public information, forms deterministic market claims, paper-trades the
+eligible ones, and records enough evidence to explain every action and non-action afterwards.
 
-## What it is
+A _sonde_ is an instrument sent into an environment to sample it and telemeter readings back. That
+is the product: public-source probes go out, typed evidence comes home, and a private operations
+cockpit shows what the system knew, decided, executed, rejected, and learned.
 
-Sonde watches public data sources, forms opinions about markets, and paper-trades on them — with
-every step of its reasoning recorded and inspectable.
+The primary goal is a system worth operating and watching, not a performance claim.
 
-A **sonde** is an instrument you send into an environment to sample it and telemeter readings back.
-That is the whole design: probes go out, readings come home, and you watch the picture assemble.
+## Strategy V1
 
-Four planes, one hard boundary:
+The launch strategy trades one measured pattern:
 
-- **Probes** collect prices, news, filings, and on-chain data. They normalize and timestamp. They never interpret.
-- **Analysts** (Claude) turn unstructured text into typed signals — direction, confidence, horizon, and _why_, with links to every source document.
-- **A portfolio agent** weighs open signals against current positions and proposes orders.
-- **A risk gate** — plain deterministic TypeScript, no model anywhere near it — decides whether any of that reaches a venue.
+- US-listed common equities, long only;
+- median 20-session dollar volume above $20m;
+- at least two distinct Section 16 reporting owners making Form 4 code-`P` purchases in the same
+  Issuer and Decision Window;
+- one final Signal at 09:20 ET for the next regular-session open;
+- canonical outcome at the close twenty subsequent sessions later.
 
-Everything above the gate is advisory. Everything below it is code you can read in an afternoon.
+The founding out-of-sample cohort returned a +1.83% median with a 58.3% win rate, against +0.10% and
+50.4% for liquid stocks on the same dates. Sonde treats those numbers as a labelled Bootstrap Prior,
+not event confidence and not proof of an edge. Live forward Signals are scored regardless of whether
+the paper system traded them.
 
-```
-probes ──▶ analysts ──▶ portfolio agent ──▶ │ RISK GATE │ ──▶ venue (paper)
-                                            │  no model │
-   collect          advisory                └───────────┘         enforced
-```
-
-The reasoning trail is the product. If you cannot watch it think, it is not finished.
-
-## The constraint that shapes everything
-
-**You cannot backtest an LLM trader.**
-
-The model was trained on text covering the period you would test over. Asked to analyse a headline
-from inside its training window, it is not reasoning forward — it is drawing on a corpus that
-contains the outcome. The backtest comes out beautiful and measures memory.
-
-This is a named problem in the literature, not a hunch. Input-side hygiene — survivorship,
-point-in-time correctness, pipeline leakage — is well covered by existing frameworks, but
-[none of it addresses the bias living in the model's weights](https://arxiv.org/pdf/2601.13770).
-
-So Sonde does not backtest. It **forward-tests**: every signal is scored against what actually
-happened at its stated horizon, prospectively, and sources and analysts accumulate real track
-records. Slower, and the numbers mean something.
-
-That single decision reorders the whole project — scoring infrastructure gets built _before_ order
-execution, because measuring before acting is the only way this stays honest.
-[ADR 0004](docs/decisions/0004-no-llm-backtests.md) has the full reasoning.
+Full rules: [`docs/strategy/charter.md`](docs/strategy/charter.md).
 
 ## Architecture at a glance
 
-| Plane        | Package           | Responsibility                                       |
-| ------------ | ----------------- | ---------------------------------------------------- |
-| Collection   | `packages/probes` | Fetch, normalize, deduplicate, timestamp             |
-| Reasoning    | `packages/agents` | Documents → typed signals with rationale and sources |
-| Enforcement  | `packages/risk`   | Deterministic limits, kill switch, dead-man's switch |
-| Execution    | `packages/venue`  | CCXT adapter, idempotency keys, reconciliation       |
-| Presentation | `apps/web`        | Live tape, trade detail, scoreboard, cost            |
+```text
+EDGAR + SIP
+    │
+    ▼
+Acquisition → Source Documents → Source Facts → Candidate Snapshots
+                                                   │
+                                                   ▼ 09:20 ET
+                                Eligibility → Signal + Decision Packet
+                                                   │
+                                                   ▼
+                         Data Readiness → Portfolio Planner → Proposal
+                                                                  │
+                                                                  ▼
+                                               deterministic Risk Gate
+                                                                  │
+                                                                  ▼
+                                                        Alpaca paper only
+```
 
-`packages/risk` has no dependency on `packages/agents`. The gate cannot import a model, so it cannot
-be talked into anything — enforced by the dependency graph, not by discipline.
+Every authoritative artifact is immutable or append-only. Ticker is not identity, money is not a
+float, and a Decision Packet freezes the exact state used at each cutoff.
+
+The model is not in the launch path. Milestone 6 adds one pinned Analyst Runtime that annotates
+existing candidates and is forward-scored separately. A model never creates an Order Proposal,
+imports into `packages/risk`, or reaches a venue. Any later influence is operator-promoted,
+capability-specific, and initially limited to vetoing or reducing the deterministic baseline.
 
 Full detail: [`docs/architecture.md`](docs/architecture.md).
 
-## What it costs
+## What the cockpit shows
 
-Venue fees are zero by construction — paper and testnet accounts. **Inference is the only recurring
-cost**, which makes it the thing worth designing around.
+The private cockpit is operations-first:
 
-| Model            | Input / 1M | Output / 1M | Role                       |
-| ---------------- | ---------- | ----------- | -------------------------- |
-| Claude Haiku 4.5 | $1         | $5          | Triage, batched            |
-| Claude Opus 5    | $5         | $25         | Deep read, order proposals |
+- current state and Data Readiness;
+- market clock and next scheduled action;
+- durable alerts and Telegram escalation;
+- candidate funnel and live decision tape;
+- positions, exposure, and auction execution;
+- Strategy, Execution, and Realism Scorecards;
+- forensic and reconstruction replay;
+- a structured read-only Event Console with audited Operator Commands.
 
-Budget: **under $30/month**, held by three levers — event-driven cadence instead of polling, tiered
-escalation so the expensive model only sees what survives triage, and prompt caching with the stable
-prefix cached at ~0.1× input price.
+It has no shell and no discretionary order ticket.
 
-> One trap worth knowing: minimum cacheable prefixes are **not** monotonic — 512 tokens on Opus 5
-> but **4096** on Haiku 4.5. A short triage prompt on the cheap model silently caches nothing, with
-> no error raised. Batching clears the floor.
+## Honest measurement
+
+Sonde keeps three truths separate:
+
+1. **Signal Outcome** — the strategy's canonical open-to-horizon-close result.
+2. **Execution Outcome** — what Alpaca paper actually filled and held.
+3. **Realism Outcome** — a versioned estimate of effects the paper broker omits.
+
+Every final Signal enters the Strategy Scorecard, including blocked, unexecuted, already-held, and
+operationally unready cases. The primary metric is median excess return against the date-matched
+point-in-time eligible universe.
+
+LLM behavior is never backtested. Model weights may contain the historical outcome, so prompt and
+model changes are evaluated only in sealed forward epochs. See
+[ADR 0004](docs/decisions/0004-no-llm-backtests.md).
+
+## Safety and scope
+
+- `SONDE_EXECUTION_MODE` must be `paper`; real capital requires a new ADR superseding
+  [0003](docs/decisions/0003-paper-first-execution.md).
+- Strategy V1 supports US-listed common equities only.
+- Sonde operates cash-like: no borrowing, shorts, options, futures, leverage, stops, or discretionary
+  orders.
+- New entries require `Active` state and passing decision-specific Data Readiness.
+- Paused, Degraded, Halted, and Recovering states continue exits, cancellations, and reconciliation.
+- The cockpit is authenticated even on loopback and is never directly public.
 
 ## Status
 
-Milestone 0. Docs first, deliberately — the decisions below were the hard part.
+Milestone 0 foundations exist in `packages/core`, `packages/db`, and `packages/probes`. Their current
+schemas predate the completed architecture review and are intentionally migration inputs rather than
+the target design.
 
-| Milestone         | Goal                                          | State       |
-| ----------------- | --------------------------------------------- | ----------- |
-| 0 · Pipe          | EDGAR + price probes flowing, visible         | In progress |
-| 1 · Signal        | Deterministic signal engine emitting Signals  | Planned     |
-| 2 · Scorekeeping  | Resolve at 20 sessions against reality        | Planned     |
-| 3 · Gate          | Risk limits, adversarially tested             | Planned     |
-| 4 · Hands         | Paper trading end to end                      | Planned     |
-| 5 · Watch         | Replay, cost dashboard, alerting              | Planned     |
-| 6 · Corroboration | The model enters, scored against the baseline | Planned     |
-| 7 · Iterate       | Prompt versioning, shadow analysts            | Planned     |
+| Milestone         | Goal                                         | State       |
+| ----------------- | -------------------------------------------- | ----------- |
+| 0 · Pipe          | Immutable EDGAR + SIP evidence, visible      | In progress |
+| 1 · Signal        | Deterministic Signals and Decision Packets   | Planned     |
+| 2 · Scorekeeping  | Point-in-time outcomes and benchmarks        | Planned     |
+| 3 · Gate          | Planner, readiness, risk, operational states | Planned     |
+| 4 · Hands         | Auction-aligned Alpaca paper execution       | Planned     |
+| 5 · Watch         | Replay, scorecards, alerts, forensics        | Planned     |
+| 6 · Corroboration | One pinned analyst, scored separately        | Planned     |
+| 7 · Iterate       | Sealed epochs and bounded promotion          | Planned     |
 
-Exit criteria for each: [`docs/roadmap.md`](docs/roadmap.md).
+Observable exit criteria: [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Getting started
 
 ```bash
 bun install
-cp .env.example .env          # add ANTHROPIC_API_KEY; the default Postgres URL matches compose
-docker compose up -d          # local Postgres 17
+cp .env.example .env
+docker compose up -d
 bun --cwd packages/db db:migrate
-bun test                      # integration tests skip cleanly without DATABASE_URL
+bun gates
 ```
 
-`SONDE_EXECUTION_MODE` must be `paper`. The venue adapter refuses to construct in any other mode,
-and changing that is not a config edit — it needs a new ADR
-([0003](docs/decisions/0003-paper-first-execution.md)).
+Milestone 0 needs Postgres, an SEC contact email, and Alpaca paper/data credentials. A model key is
+not required until Milestone 6.
 
 ## Documentation
 
-Docs are the source of truth; code implements against them.
+| Document                                       | Purpose                                                |
+| ---------------------------------------------- | ------------------------------------------------------ |
+| [`docs/overview.md`](docs/overview.md)         | The whole intended system in one read                  |
+| [`docs/goals.md`](docs/goals.md)               | Goals, non-goals, and success criteria                 |
+| [`docs/architecture.md`](docs/architecture.md) | Planes, deep module seams, ledger, runtime, deployment |
+| [`CONTEXT.md`](CONTEXT.md)                     | Canonical domain language                              |
+| [`docs/strategy/`](docs/strategy)              | Measured strategy and end-to-end walkthrough           |
+| [`docs/specs/`](docs/specs)                    | Implementation contracts                               |
+| [`docs/roadmap.md`](docs/roadmap.md)           | Milestones with observable exit criteria               |
+| [`docs/decisions/`](docs/decisions)            | Append-only architectural decisions                    |
 
-| Doc                                            | What's in it                                          |
-| ---------------------------------------------- | ----------------------------------------------------- |
-| [`docs/goals.md`](docs/goals.md)               | What this is for, what it is explicitly not for       |
-| [`docs/architecture.md`](docs/architecture.md) | Planes, dataflow, storage, cost model                 |
-| [`docs/roadmap.md`](docs/roadmap.md)           | Milestones with observable exit criteria              |
-| [`docs/glossary.md`](docs/glossary.md)         | Trading terms, written for people who don't trade     |
-| [`docs/decisions/`](docs/decisions)            | 9 ADRs — the reasoning behind every structural choice |
-
-**Start with [`docs/overview.md`](docs/overview.md)** for the whole system in one read, then
-[ADR 0004](docs/decisions/0004-no-llm-backtests.md) — the milestone ordering, the storage schema, and
-the scoring apparatus all follow from it.
-
-## Why it's built this way
-
-A few decisions that were genuinely contested:
-
-- **[0003](docs/decisions/0003-paper-first-execution.md) — paper only, and going live is an ADR, not a flag.** The usual failure isn't dramatic; it's a boolean that gets flipped while debugging and never flipped back.
-- **[0005](docs/decisions/0005-llm-proposes-code-disposes.md) — the model can't reach the venue.** Its entire input surface is attacker-writable public text. Anyone who can publish a page Sonde reads can attempt prompt injection. A successful one should produce a rejected proposal and a log entry, not a trade.
-- **[0006](docs/decisions/0006-event-driven-cadence.md) — wake on events, not on a timer.** A timer manufactures decision points, and a model asked "should I trade?" every 15 minutes will sometimes say yes for no better reason than having been asked.
-- **[0008](docs/decisions/0008-append-only-signal-log.md) — signals are append-only, with mandatory provenance.** Without backtesting, the forward record is the entire evidence base. If it can be edited, there's nothing to stand on.
+Start with the [overview](docs/overview.md), then read [ADR 0004](docs/decisions/0004-no-llm-backtests.md)
+and the [Strategy V1 charter](docs/strategy/charter.md).
 
 ## Contributing
 
-Personal project, but the docs are meant to be readable and issues are welcome. Conventional
-Commits. Decisions go in ADRs before code, not after.
+This is a personal project, but issues are welcome. Docs lead code, structural decisions get ADRs,
+and commits follow Conventional Commits.
 
 ```bash
-bun gates    # typecheck + lint (--deny-warnings) + format check
+bun gates
 ```
-
-Linting is [oxlint + oxfmt](docs/decisions/0010-oxc-toolchain.md). The architectural boundaries are
-lint rules rather than prose — `packages/risk` importing a model is a build error that cites the ADR
-it violates. If lint blocks an import, that is the architecture talking; don't weaken the rule.
 
 ## Disclaimer
 
-Sonde is a personal engineering project, built to be interesting to operate rather than profitable —
-that ordering is [stated explicitly](docs/goals.md) and it shapes every design decision here.
-
-It executes against paper and testnet accounts only. Nothing in this repository is financial or
-investment advice, no output of this system is a recommendation, and no performance claim is made or
-implied. Retail systematic trading is negative-sum after costs. If you fork this and point it at
-real money, that is entirely your own call, and you should assume you will lose it.
+Sonde is a personal engineering project. It paper-trades simulated funds only. Nothing in this
+repository is financial or investment advice, no output is a recommendation, and no performance
+claim is made or implied.
 
 ## License
 

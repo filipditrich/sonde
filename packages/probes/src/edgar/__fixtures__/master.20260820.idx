@@ -1,0 +1,4 @@
+Description:           Master Index of EDGAR Dissemination Feed
+CIK|Company Name|Form Type|Date Filed|Filename
+0001739310|Example Issuer|4|2026-08-20|edgar/data/1739310/000173931026000004/0001739310-26-000004.txt
+0000000001|Other Issuer|8-K|2026-08-20|edgar/data/1/000000000126000001/notice.txt

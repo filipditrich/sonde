@@ -4,12 +4,67 @@ import type { SourceProfile } from './source-profile';
 export type CacheValidators = { etag?: string; lastModified?: string };
 
 export type FetchResult =
-	| { readonly status: 'ok'; readonly body: string; readonly validators: CacheValidators }
+	| {
+			readonly status: 'ok';
+			readonly body: string;
+			readonly bytes: Uint8Array;
+			readonly validators: CacheValidators;
+			readonly httpStatus: number;
+			readonly requestedAt: string;
+			readonly completedAt: string;
+			readonly mediaType?: string;
+	  }
 	/** the source said nothing changed — the common case when polling a feed */
-	| { readonly status: 'unchanged' };
+	| {
+			readonly status: 'unchanged';
+			readonly httpStatus: 304;
+			readonly requestedAt: string;
+			readonly completedAt: string;
+			readonly validators: CacheValidators;
+	  }
+	| {
+			readonly status: 'failed';
+			readonly httpStatus?: number;
+			readonly requestedAt: string;
+			readonly completedAt: string;
+			readonly failure: { readonly code: string; readonly detail: string };
+	  };
 
 export type Clock = () => number;
 export type Sleep = (ms: number) => Promise<void>;
+export type FetchCapture = { resource: string; requestedAt: string; result: FetchResult };
+
+const requestHeaders = (profile: SourceProfile, validators: CacheValidators): Record<string, string> => {
+	const headers: Record<string, string> = { 'User-Agent': profile.userAgent };
+	if (!profile.conditional) return headers;
+	if (validators.etag) headers['If-None-Match'] = validators.etag;
+	if (validators.lastModified) headers['If-Modified-Since'] = validators.lastModified;
+	return headers;
+};
+
+const responseResult = async (profile: SourceProfile, response: Response, requestedAt: string, completedAt: string): Promise<FetchResult> => {
+	const validators = { etag: response.headers.get('etag') ?? undefined, lastModified: response.headers.get('last-modified') ?? undefined };
+	if (response.status === 304) return { status: 'unchanged', httpStatus: 304, requestedAt, completedAt, validators };
+	if (!response.ok)
+		return {
+			status: 'failed',
+			requestedAt,
+			httpStatus: response.status,
+			completedAt,
+			failure: { code: 'http-error', detail: `${profile.name} returned ${response.status}` },
+		};
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	return {
+		status: 'ok',
+		body: new TextDecoder().decode(bytes),
+		bytes,
+		httpStatus: response.status,
+		requestedAt,
+		completedAt,
+		validators,
+		mediaType: response.headers.get('content-type')?.split(';')[0] ?? undefined,
+	};
+};
 
 /**
  * A polite fetcher, one instance per source.
@@ -24,7 +79,12 @@ export class PoliteFetcher {
 
 	constructor(
 		private readonly profile: SourceProfile,
-		private readonly deps: { fetch?: typeof globalThis.fetch; now?: Clock; sleep?: Sleep } = {},
+		private readonly deps: {
+			fetch?: typeof globalThis.fetch;
+			now?: Clock;
+			sleep?: Sleep;
+			capture?: (capture: FetchCapture) => void | Promise<void>;
+		} = {},
 	) {}
 
 	async get(url: string, validators: CacheValidators = {}): Promise<FetchResult> {
@@ -39,28 +99,27 @@ export class PoliteFetcher {
 		const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 		const doFetch = this.deps.fetch ?? globalThis.fetch;
 
+		const requestedAt = new Date(now()).toISOString();
 		const wait = this.#nextAllowedAt - now();
 		if (wait > 0) await sleep(wait);
 		this.#nextAllowedAt = now() + this.profile.minIntervalMs;
 
-		const headers: Record<string, string> = { 'User-Agent': this.profile.userAgent };
-		if (this.profile.conditional) {
-			if (validators.etag) headers['If-None-Match'] = validators.etag;
-			if (validators.lastModified) headers['If-Modified-Since'] = validators.lastModified;
+		let res: Response;
+		try {
+			res = await doFetch(url, { headers: requestHeaders(this.profile, validators) });
+		} catch (error) {
+			const result: FetchResult = {
+				status: 'failed',
+				requestedAt,
+				completedAt: new Date(now()).toISOString(),
+				failure: { code: 'network-error', detail: error instanceof Error ? error.message : String(error) },
+			};
+			await this.deps.capture?.({ resource: url, requestedAt, result });
+			return result;
 		}
-
-		const res = await doFetch(url, { headers });
-		if (res.status === 304) return { status: 'unchanged' };
-		if (!res.ok) throw new FetchError(this.profile.name, url, res.status);
-
-		return {
-			status: 'ok',
-			body: await res.text(),
-			validators: {
-				etag: res.headers.get('etag') ?? undefined,
-				lastModified: res.headers.get('last-modified') ?? undefined,
-			},
-		};
+		const result = await responseResult(this.profile, res, requestedAt, new Date(now()).toISOString());
+		await this.deps.capture?.({ resource: url, requestedAt, result });
+		return result;
 	}
 }
 

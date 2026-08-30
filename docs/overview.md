@@ -1,357 +1,177 @@
 # Sonde — system overview
 
-The single document to read for the whole picture. Everything here is summary; the authoritative
-detail lives in [`architecture.md`](./architecture.md), [`strategy/`](./strategy), and the
-[ADRs](./decisions).
+Sonde watches point-in-time public information, emits deterministic market claims, paper-trades the
+eligible ones, and preserves an inspectable record of the entire path. Its primary goal is a system
+worth operating and watching, not a claim of profitable trading.
 
----
+The authoritative detail lives in [`architecture.md`](./architecture.md), the
+[`strategy/`](./strategy) charter, the [specs](./specs), and the [ADRs](./decisions).
 
-## 1. What it is
+## What launches first
 
-Sonde watches public data sources, forms opinions about markets, and paper-trades on them — with
-every step of its reasoning recorded and inspectable.
+Strategy V1 is narrow and measured:
 
-**The thesis in one sentence:** trade when _independent_ evidence agrees — a mandated disclosure, an
-exogenous macro move, genuine unprompted attention — because any single source is either noise or
-already priced.
+- US-listed common equities only;
+- long only;
+- at least two distinct Section 16 reporting-owner CIKs making qualifying Form 4 code-`P`
+  purchases in the same Issuer and Decision Window;
+- median 20-session dollar volume above $20m;
+- one final Signal per Issuer and Decision Window at 09:20 America/New_York;
+- canonical outcome from the next regular-session open through the close twenty subsequent
+  sessions later.
 
-**The primary goal is a system worth operating and watching, not a profitable one.** That ordering
-is deliberate and stated ([`goals.md`](./goals.md)); it prevents backtest-driven development, which
-for an LLM-based system produces numbers that mean nothing.
+Historical out-of-sample evidence found a +1.83% median 20-session return and 58.3% win rate for the
+liquid multi-insider cohort, against +0.10% and 50.4% for liquid stocks on the same dates. Those
+figures are a Bootstrap Prior, not event confidence and not a profitability claim. Forward Signals
+are the evidence that matters now.
 
----
-
-## 2. System at a glance
-
-```mermaid
-flowchart TB
-    subgraph sources["Sources — all free, all public"]
-        S1["SEC EDGAR<br/>Form 4 · 8-K"]
-        S2["GDELT · RSS"]
-        S3["Bluesky · Reddit"]
-        S4["FRED · sector ETFs"]
-        S5["Alpaca<br/>bars · quotes"]
-    end
-
-    subgraph collect["1 — Collection"]
-        PR["probes<br/>fetch · normalise · hash"]
-        CL["clustering<br/>collapse syndication"]
-    end
-
-    ST[("Postgres<br/>append-only")]
-
-    subgraph reason["2 — Reasoning &nbsp;·&nbsp; advisory only"]
-        TR["triage · Haiku 4.5<br/>batched, filters hard"]
-        TH["thesis builder<br/>causal independence"]
-        DR["deep read · Opus 5<br/>one call per thesis"]
-        PM["portfolio agent"]
-    end
-
-    subgraph enforce["3 — Enforcement &nbsp;·&nbsp; deterministic"]
-        GT{{"risk gate<br/>no model, ever"}}
-        RC["reconciler<br/>venue is truth"]
-    end
-
-    VN[["Alpaca — paper only"]]
-    UI["dashboard — private"]
-
-    S1 & S2 & S3 & S4 & S5 --> PR --> CL --> ST
-    CL --> TR --> TH
-    TH -->|"2+ independent"| DR --> PM --> GT
-    GT -->|accepted| VN
-    GT -.->|"rejected + reason"| ST
-    VN <--> RC --> ST
-    ST --> UI
-```
-
-**The boundary between planes 2 and 3 is the whole design.** Everything above the gate is advisory.
-The model emits a typed proposal into a function it does not control, and that function is plain
-TypeScript with no network and no model in it. A hallucination, a misreading, or a successful prompt
-injection produces a **rejected proposal and a log entry**, never a trade.
-
----
-
-## 3. The four planes
-
-### Collection
-
-Probes are small, independent, single-purpose collectors. Each fetches, normalises, deduplicates,
-and timestamps. **A probe never interprets** — it has no opinion, only provenance.
-
-Two rules that everything downstream depends on:
-
-- **Raw payloads are persisted before anything is derived from them**, content-hashed. Everything
-  else can be rebuilt from that table, which is what makes replay and shadow analysts possible.
-- **Two timestamps, always.** `occurredAt` is when the event happened; `observedAt` is when Sonde
-  saw it. They are separate branded types in code, so swapping them is a compile error.
-
-### Reasoning — advisory
-
-Turns observations into typed `Signal` records. Two tiers, because inference is the only real cost:
-
-| Tier      | Model     | Role                                                 |
-| --------- | --------- | ---------------------------------------------------- |
-| Triage    | Haiku 4.5 | Batched scoring of many items per call; filters hard |
-| Deep read | Opus 5    | One call per formed thesis; produces the signal      |
-
-A `Signal` without `rationale` and `sourceIds` fails schema validation. Not a convention — a
-`ZodError`.
-
-### Enforcement — deterministic
-
-| Component  | Owns                                                                                                 |
-| ---------- | ---------------------------------------------------------------------------------------------------- |
-| Risk gate  | Position caps, daily loss halt, order rate, gap guard, sanity bounds, kill switch, dead-man's switch |
-| Reconciler | Venue state is authoritative; local state is a cache to be corrected                                 |
-
-`packages/risk` cannot import `packages/agents` — enforced by a lint rule that fails the build citing
-the ADR it protects.
-
-### Presentation — private
-
-A Next.js dashboard, read-mostly, over the same Postgres. **Never publicly deployed** — venue terms
-forbid redistributing market data ([ADR 0013](./decisions/0013-private-dashboard-public-repo.md)).
-Derived artifacts — signals, rationale, calibration curves — are ours and publishable; quotes and
-bars are not.
-
----
-
-## 4. How evidence becomes a position
+## End-to-end path
 
 ```mermaid
 flowchart LR
-    E["new<br/>observation"] --> D1{"downstream of<br/>evidence we<br/>already hold?"}
-    D1 -->|yes| LOG["log only<br/><i>informs propagation,<br/>never corroborates</i>"]
-    D1 -->|no| D2{"class"}
-    D2 -->|macro| MOD["modifier or veto<br/><i>never forms a thesis</i>"]
-    D2 -->|"filing · editorial<br/>attention"| ADD["add to<br/>thesis candidate"]
-    ADD --> D3{"2+ independent<br/>within window?"}
-    D3 -->|no| WATCH["watchlist<br/><i>no trade</i>"]
-    D3 -->|yes| ESC["escalate<br/>to deep read"]
+    A[Acquisition Attempt] --> D[Source Document]
+    D --> F[Source Facts]
+    F --> C[Candidate Snapshots]
+    C --> E[Eligibility Decision]
+    E --> S[Signal + Decision Packet]
+    S --> R[Data Readiness]
+    R --> P[Planning Decision]
+    P -->|proposal| G[Risk Decision]
+    P -.->|no proposal| O[Recorded non-action]
+    G -->|accepted| X[Alpaca paper execution]
+    G -.->|rejected| O
+    X --> Y[Execution Outcome]
+    S --> Z[Signal Outcome]
+    Y & Z --> SC[Separate scorecards]
 ```
 
-**Independence is causal, not categorical.** Two pieces of evidence corroborate when neither is
-downstream of the other. Two insiders filing separately are independent decisions by different
-people; a news article _about_ a filing is not. This was corrected during the trade walkthrough — the
-original categorical rule would have counted a filing and the article about it as two sources.
+Every box is immutable or append-only. Typed Input References bind derived decisions to the exact
+artifacts they consumed. The cockpit is a view over this evidence spine, not a second source of
+truth.
 
-### The evidence classes
+## What happens at the open
 
-| Class       | Source                                                 | Independence rests on                                |
-| ----------- | ------------------------------------------------------ | ---------------------------------------------------- |
-| `filing`    | SEC EDGAR — Form 4 (code `P` only), 8-K, congressional | Legally mandated, fixed clock, not derived from news |
-| `editorial` | GDELT, RSS                                             | Reporting — _frequently derivative, often rejected_  |
-| `attention` | Bluesky firehose, Reddit                               | The crowd — derivative portion must be netted out    |
-| `macro`     | FRED, sector ETFs                                      | Entirely exogenous — modifier only                   |
+Facts sharing the same next executable regular-session open form a Decision Window. As filings
+arrive, Sonde appends Candidate Snapshots; it does not mutate one current candidate.
 
----
+At 09:20 ET:
 
-## 5. The trading day
+1. Strategy V1 freezes the final Candidate Snapshot.
+2. It appends an Eligibility Decision and at most one Signal.
+3. A Decision Packet captures the exact strategy, policy, calendar, universe, SIP data, candidate,
+   readiness-policy inputs, portfolio, and model versions available.
+4. Data Readiness checks whether action-specific inputs are complete, current, entitled, and
+   reconciled.
+5. The deterministic Portfolio Planner records either a no-proposal reason or a whole-share Order
+   Proposal targeting 1% of paper equity.
+6. The Risk Gate accepts or rejects the proposal without fetching data, calling a model, or touching
+   a broker.
+7. An accepted proposal reaches Alpaca paper as a market-on-open order before 09:28.
 
-Crypto never closes, so event and price reaction are simultaneous — corroboration always arrives
-after the move. US equities close, which hands the strategy a window nobody can trade in.
+Partial auction fills stand; Sonde never chases after the open. A fill above 1.25% of paper equity
+enters Halted for operator review without automatic liquidation.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant P as Probes
-    participant B as Thesis builder
-    participant D as Deep read
-    participant G as Risk gate
-    participant V as Alpaca paper
+Normal exit is a market-on-close order on the horizon session. Execution failures follow a
+deterministic recorded fallback until the paper position is flat. The canonical Signal Outcome
+still uses the defined open-to-horizon-close convention, independent of broker behavior.
 
-    Note over P,V: 16:00 ET — market closes
-    P->>B: 16:47 Form 4 · code P · CFO
-    Note over B: 1 piece — watchlist only
-    P->>B: 17:02 Form 4 · code P · director
-    Note over B: 2 independent — thesis forms
-    P->>B: 18:20 wire story, 11 outlets
-    Note over B: derivative — logged, not counted
-    P->>B: 21:40 attention 4x baseline
-    Note over B: mostly derivative — residual too small
-    P->>B: 06:15 sector +1.1%
-    Note over B: macro — modifier only
-    B->>D: 09:25 escalate
-    D->>G: long · conf 0.64 · P3D
-    Note over G,V: 09:30 ET — open gaps +6.1%
-    G--xV: REJECTED — gap guard
-    G->>G: thesis, gap and reason logged
-```
+## Operational states
 
-**The window is real and it is not free.** Seventeen hours to assemble a thesis, and then the market
-reprices the asset before anyone can act. The gap guard rejects stale theses rather than chasing
-them — and the most instructive path through the system ends in _not trading_, which is why
-rejections are rendered next to fills.
+| State      | New entries        | Position management                  | Meaning                              |
+| ---------- | ------------------ | ------------------------------------ | ------------------------------------ |
+| Active     | Allowed when ready | Continues                            | Normal operation                     |
+| Paused     | Blocked            | Continues                            | Operator-requested pause             |
+| Degraded   | Blocked            | Continues                            | Required data is stale or incomplete |
+| Halted     | Blocked            | Risk-reducing actions continue       | Safety or invariant breach           |
+| Recovering | Blocked            | Reconciliation and recovery continue | Truth is being rebuilt               |
 
-Full minute-by-minute reasoning: [`strategy/anatomy-of-a-trade.md`](./strategy/anatomy-of-a-trade.md).
+There is no automatic flatten on a state transition. Resuming entry requires the appropriate
+authenticated command, fresh reconciliation, and passing Data Readiness.
 
----
+## Three truths, three scorecards
 
-## 6. Position lifecycle
+Sonde refuses to collapse these into one P&L:
 
-```mermaid
-stateDiagram-v2
-    [*] --> Candidate: first evidence
-    Candidate --> Candidate: more evidence
-    Candidate --> Expired: window elapses
-    Candidate --> Thesis: 2+ independent
-    Thesis --> Proposal: deep read emits signal
-    Proposal --> Rejected: gate check fails
-    Proposal --> Open: accepted and filled
-    Open --> Closed: horizon expires
-    Open --> Closed: thesis decays below entry bar
-    Open --> Closed: stop hit
-    Closed --> Scored: outcome written once
-    Rejected --> Scored: scored counterfactually
-    Expired --> [*]
-    Scored --> [*]
-```
+1. **Signal Outcome** — the strategy's canonical counterfactual return, for every final Signal.
+2. **Execution Outcome** — the paper broker's actual fills and position result.
+3. **Realism Outcome** — a versioned estimate of effects Alpaca paper omits.
 
-Rejected proposals are **scored anyway**. Whether the gap guard rejected trades that would have
-worked is measurable, and it is the only way to tune the threshold on evidence rather than taste.
+The Strategy Scorecard's primary metric is median Signal Excess Return against the date-matched
+point-in-time eligible-universe median. Raw returns, hit rate, tails, unresolvable outcomes, and SIC
+and SPY comparisons remain visible. The separate Execution Scorecard reports broker equity,
+time-weighted return, P&L, drawdown, exposure, turnover, and fill variance.
 
----
+Every final Signal enters the strategy population, including Signals that were blocked, already
+held, operationally unready, or too expensive for one whole share.
 
-## 7. Data model
+## Where the model fits
 
-```mermaid
-erDiagram
-    raw_documents ||--o{ observations : "derived from"
-    observations }o--o{ signals : "cited by"
-    signals ||--o| signal_results : "resolved by"
-    signals ||--o{ proposals : "argues for"
-    proposals ||--|| gate_decisions : "judged by"
-    gate_decisions ||--o| orders : "may produce"
-    orders ||--o{ fills : "executed as"
-```
+The model is absent from launch trading. Milestone 6 adds one pinned Analyst Runtime that reads
+bounded evidence around existing candidates and emits structured Analyst Annotations:
 
-| Table              | Holds                                     | Mutability   |
-| ------------------ | ----------------------------------------- | ------------ |
-| `raw_documents`    | Content-hashed original payloads          | Immutable    |
-| `observations`     | Normalised probe output                   | Immutable    |
-| `signals`          | Analyst output with rationale and sources | Append-only  |
-| `signal_results`   | Resolved outcome at horizon               | Written once |
-| `proposals`        | Portfolio agent order proposals           | Append-only  |
-| `gate_decisions`   | Accept/reject with reason                 | Append-only  |
-| `orders` / `fills` | Submitted and executed                    | Append-only  |
+- `supports`, `undercuts`, or `neutral`;
+- probability that the Signal beats its Primary Benchmark;
+- magnitude band, uncertainty, rationale, and typed Evidence Relations.
 
-**Append-only is a database trigger, not a convention.** `UPDATE` and `DELETE` raise, citing the ADR:
+An annotation initially changes nothing. Analyst Behavior Versions are frozen and scored in sealed
+forward Evaluation Epochs. Only the authenticated operator can grant confidence, eligibility-
+reduction, or sizing-reduction influence after the documented evidence floor. Early promoted
+influence can only veto or reduce the deterministic baseline; it cannot create proposals, increase
+exposure, or override risk.
 
-```
-ERROR:  signals is append-only: UPDATE rejected. Insert a superseding row instead.
-        See docs/decisions/0008-append-only-signal-log.md
-```
+If an annotation-only call fails, Strategy V1 continues. If a promoted model capability becomes
+part of entry policy, missing or invalid output fails Data Readiness for the affected entry.
 
-Because LLM decisions cannot be backtested, the forward record is the only thing Sonde can ever be
-judged on. It must not be editable by a migration, a stray `psql` session, or us.
+## Point-in-time honesty
 
----
+- SEC CIK identifies an Issuer; effective-dated Listings and Broker Assets identify what trades.
+  Ticker is not identity.
+- SEC acceptance time, transaction date, market sessions, publication time, `observedAt`, and
+  `recordedAt` keep their separate meanings.
+- Delayed consolidated SIP daily bars are authoritative for liquidity, sizing inputs, benchmarks,
+  and Signal Outcomes. Real-time IEX is a labelled cockpit indication only.
+- Authoritative money and quantity use validated decimals, not binary floating point.
+- Corporate actions use a documented total-return method. Impossible cases become visible
+  Unresolvable Outcomes rather than disappearing.
 
-## 8. Components
+## Replay
 
-| Package         | Responsibility                                            | State                           |
-| --------------- | --------------------------------------------------------- | ------------------------------- |
-| `@sonde/core`   | Zod domain schemas — the single source of truth for types | **Built** — 21 tests            |
-| `@sonde/db`     | Drizzle schema, migrations, point-in-time reads           | **Built** — 5 integration tests |
-| `@sonde/probes` | Collectors, one module per source                         | Planned — M1                    |
-| `@sonde/agents` | Analyst prompts, thesis builder, model routing            | Planned — M2                    |
-| `@sonde/risk`   | The gate — deterministic, adversarially tested            | Planned — M4                    |
-| `@sonde/venue`  | Alpaca adapter, idempotency, reconciliation               | Planned — M5                    |
-| `apps/engine`   | The loop — probes, analysts, gate, reconciler             | Planned — M0                    |
-| `apps/web`      | Private dashboard                                         | Planned — M0                    |
+Forensic Replay uses the exact captured Decision Packet and versions. Reconstruction Replay may use
+corrected or newly fetched inputs and displays field-level differences. A preserved model request
+and response are historical truth; sampling the model again is not replay.
 
-### Point-in-time reads
+## Cockpit
 
-Everything an analyst sees goes through `asAnalystSaw(db, asOf)`. The timestamp is **required, not
-defaulted** — there is no accidental path to "just read the table."
+The private cockpit leads with operating state, readiness, market clock and next action, alerts,
+candidate funnel, decision tape, positions, exposure, and scorecard summaries. The Event Console is
+a structured read-only lineage viewer, not a shell or order ticket.
 
-It filters on `observed_at`, never `occurred_at`. A bar that _closed_ in 2019 but was _imported_
-today has a 2019 `occurred_at` and today's `observed_at`; filtering the intuitive way would look
-correct and silently leak the future.
+Server-Sent Events make new evidence visible immediately; durable REST snapshots remain
+authoritative. Operator Commands are authenticated and audited. The in-app alert inbox is canonical,
+with Telegram for urgent events.
 
----
+## Runtime and deployment
 
-## 9. What is enforced structurally
+One engine process has an ordinary scheduled lane and an isolated priority market-action lane. One
+always-on machine runs the supervised engine and web processes with plain Postgres. Before paper
+execution, sleep is disabled, clock synchronization is verified, restart is automatic, and startup
+reconciliation passes.
 
-Not documented — enforced, so violating it fails a build, a test, or a query.
+The project keeps one simple backup copy outside the live data directory. It does not build high
+availability or TimescaleDB speculatively. Model usage and cost are measured and displayed without
+an automatic budget cap.
 
-| Invariant                      | Mechanism                                                 |
-| ------------------------------ | --------------------------------------------------------- |
-| The gate cannot reach a model  | `no-restricted-imports` lint rule citing ADR 0005         |
-| Agents cannot reach a venue    | Same                                                      |
-| Signals name their causes      | Zod `.min(1)` on `sourceIds`, non-empty `rationale`       |
-| The record is not editable     | Postgres triggers on four tables                          |
-| Timestamps cannot be swapped   | Separate branded types                                    |
-| Money is never a float         | Branded decimal strings                                   |
-| Analysts cannot see the future | `asAnalystSaw` requires an explicit `asOf`                |
-| The gate stays readable        | Complexity capped at 8 in `packages/risk` vs 12 elsewhere |
-| Execution stays on paper       | Venue adapter refuses to construct otherwise              |
+## Milestones
 
----
+| Milestone         | Outcome                                                                        |
+| ----------------- | ------------------------------------------------------------------------------ |
+| 0 · Pipe          | EDGAR and SIP evidence flows into immutable lineage and appears in the cockpit |
+| 1 · Signal        | Decision Windows close into deterministic Signals and Decision Packets         |
+| 2 · Scorekeeping  | Signals resolve against point-in-time benchmarks                               |
+| 3 · Gate          | Planner, readiness, risk, and fail-closed states are adversarially tested      |
+| 4 · Hands         | Auction-aligned Alpaca paper execution runs unattended                         |
+| 5 · Watch         | Replay, scorecards, alerts, and forensics make the cockpit worth opening       |
+| 6 · Corroboration | One pinned analyst annotates candidates and is scored separately               |
+| 7 · Iterate       | Sealed epochs and operator Promotion Decisions grant bounded influence         |
 
-## 10. Cost
-
-Venue fees are zero by construction — paper only. **Inference is the sole recurring cost.**
-
-| Model     | Input / 1M | Output / 1M | Role                 |
-| --------- | ---------- | ----------- | -------------------- |
-| Haiku 4.5 | $1         | $5          | Triage, batched      |
-| Opus 5    | $5         | $25         | Deep read, proposals |
-
-Target **under $30/month**, held by three levers: event-driven cadence rather than polling; tiered
-escalation so Opus only sees formed theses; and prompt caching with the stable prefix at ~0.1× input
-price.
-
-> Minimum cacheable prefixes are **not monotonic** — 512 tokens on Opus 5 but **4096 on Haiku 4.5**.
-> A short triage prompt on the cheap model silently caches nothing, with no error. Batching clears
-> the floor.
-
----
-
-## 11. Status
-
-| Milestone         | Goal                                          | State       |
-| ----------------- | --------------------------------------------- | ----------- |
-| 0 · Pipe          | EDGAR + price probes flowing, visible         | In progress |
-| 1 · Signal        | Deterministic signal engine emitting Signals  | Planned     |
-| 2 · Scorekeeping  | Resolve at 20 sessions against reality        | Planned     |
-| 3 · Gate          | Risk limits, adversarially tested             | Planned     |
-| 4 · Hands         | Paper trading end to end                      | Planned     |
-| 5 · Watch         | Replay, cost dashboard, alerting              | Planned     |
-| 6 · Corroboration | The model enters, scored against the baseline | Planned     |
-| 7 · Iterate       | Prompt versioning, shadow analysts            | Planned     |
-
-**Scoring is built before execution**, and **no model call happens until the deterministic baseline
-is running and scored** — otherwise "did the LLM help?" is unanswerable.
-
-### Open assumptions
-
-| ID     | Assumption                                           | Resolution                                    |
-| ------ | ---------------------------------------------------- | --------------------------------------------- |
-| A1     | Code-`P` Form 4s carry information                   | Scoreboard, months                            |
-| A2     | Multi-insider clusters beat single filings           | Scoreboard, months                            |
-| A3     | Derivative attention is separable                    | Needs real post data                          |
-| **A4** | **Overnight gaps are small enough to trade through** | **Measurable now — highest-value next spike** |
-| A5     | EDGAR `getcurrent` latency is seconds                | One afternoon of polling                      |
-
-A4 is the one that could invalidate the strategy: if most filing-driven theses gap past the guard,
-this does not work in its current form.
-
----
-
-## 12. Where decisions live
-
-Fourteen [ADRs](./decisions), append-only. The load-bearing ones:
-
-| ADR                                                             | Decision                                                                       |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [0004](./decisions/0004-no-llm-backtests.md)                    | **No LLM backtests** — forward-testing only. Everything else follows from this |
-| [0005](./decisions/0005-llm-proposes-code-disposes.md)          | The LLM proposes, deterministic code disposes                                  |
-| [0003](./decisions/0003-paper-first-execution.md)               | Paper only; going live is an ADR, not a flag                                   |
-| [0008](./decisions/0008-append-only-signal-log.md)              | Append-only record with mandatory provenance                                   |
-| [0011](./decisions/0011-source-acquisition-policy.md)           | Source tiers; no adversarial scraping                                          |
-| [0013](./decisions/0013-private-dashboard-public-repo.md)       | Dashboard private, repo public                                                 |
-| [0014](./decisions/0014-equities-and-commodity-etfs-primary.md) | Equities and commodity ETFs; crypto is a testbed                               |
-
-**Start with 0004.** The milestone ordering, the storage schema, and the entire scoring apparatus
-follow from the fact that an LLM trader cannot be meaningfully backtested.
+Observable exit criteria live in [`roadmap.md`](./roadmap.md).

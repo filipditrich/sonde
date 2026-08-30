@@ -15,6 +15,13 @@
 			"when": 1787862492731,
 			"tag": "0001_append_only_guards",
 			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1787862500000,
+			"tag": "0002_milestone_zero_evidence",
+			"breakpoints": true
 		}
 	]
 }

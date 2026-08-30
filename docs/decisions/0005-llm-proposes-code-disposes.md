@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Milestone 0, 2026-08-27)
+Superseded by [0015](./0015-deterministic-planning-promotable-analysis.md) (2026-08-29). The hard safety boundary remains; 0015 replaces the LLM-owned proposal path with deterministic planning and promotable analyst influence.
 
 ## Context
 

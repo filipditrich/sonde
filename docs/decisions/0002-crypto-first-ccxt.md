@@ -2,9 +2,7 @@
 
 ## Status
 
-Accepted (Milestone 0, 2026-08-27) — **scope amended by [0014](./0014-equities-and-commodity-etfs-primary.md)**:
-crypto is now a plumbing testbed rather than the strategy target. The venue abstraction below stands
-unchanged and is what made the reversal cheap.
+Superseded by [0020](./0020-strategy-v1-common-equities-only.md) (2026-08-29). ADR 0014 first demoted crypto to a plumbing testbed; 0020 removes crypto and CCXT from the initial application entirely while preserving a Sonde-shaped venue boundary.
 
 ## Context
 

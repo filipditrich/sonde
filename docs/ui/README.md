@@ -1,32 +1,25 @@
 # UI
 
-Dashboard information architecture and flows. Written just-in-time, like specs.
-
-The dashboard is not a reporting layer bolted on at the end — it is the primary product surface
-([`../goals.md`](../goals.md)). "Can you watch it think?" is a completion criterion, not a nice-to-have.
-
-## Written
-
-- [`first-screen.md`](./first-screen.md) — the Milestone 0 screen: funnel, qualifying events, probe health
+The dashboard is Sonde's private operations cockpit, not a discretionary trading terminal. Its home
+screen, transport, command boundaries, and progressive milestone behavior are specified in
+[`first-screen.md`](./first-screen.md).
 
 ## Surfaces
 
-| Surface            | Answers                                                  | Milestone |
-| ------------------ | -------------------------------------------------------- | --------- |
-| Funnel             | What is it reading, and how much is it throwing away?    | 0         |
-| Probe health       | Is anything stalled or silently failing?                 | 0         |
-| Live tape          | What is it seeing and concluding, right now?             | 1         |
-| Analyst scoreboard | Which sources and analysts actually carry information?   | 2         |
-| Blocked            | What did the gate reject, and why?                       | 3         |
-| Trade detail       | Why did it do that? Sources → rationale → gate → fill    | 4         |
-| Cost               | What is this costing, by tier and probe, against budget? | 5         |
-| Replay             | Scrub back and watch a decision re-form                  | 5         |
+| Surface                          | Answers                                                               | Begins |
+| -------------------------------- | --------------------------------------------------------------------- | ------ |
+| Home status rail                 | Is Sonde safe, ready, fresh, and on schedule?                         | 0      |
+| Candidate funnel                 | What entered, survived, and formed a decision?                        | 0      |
+| Runtime health                   | Are sources, market data, clocks, and jobs healthy?                   | 0      |
+| Candidate and Signal detail      | What exactly did Sonde know and conclude?                             | 1      |
+| Strategy Scorecard               | Do all final Signals carry forward information?                       | 2      |
+| Blocked decisions                | What did readiness, planning, or risk reject, and why?                | 3      |
+| Positions and trade detail       | What is held or in flight, and how did it reach the venue?            | 4      |
+| Execution and Realism Scorecards | What did paper execution do, and what does it omit?                   | 4–5    |
+| Replay                           | What was captured then, and what reconstructs differently now?        | 5      |
+| Analyst evaluation               | Does a behavior add calibrated, economic information?                 | 6      |
+| Promotion controls               | Which behavior capabilities are active, bounded, or revoked?          | 7      |
+| Event Console                    | What append-only event happened, and which safe command is available? | 0–7    |
 
-Milestone numbers follow the [roadmap as revised 2026-08-27](../roadmap.md). These are not eight
-separate screens: the funnel is the spine, and most of the rows above are a stage appended to it or a
-drill-down from one.
-
-## Principle
-
-Every number in the UI is traceable to its inputs in at most two clicks. A figure you cannot drill
-into is a figure you cannot trust, and an untrustworthy dashboard is worse than none.
+Every number is traceable to its population or direct inputs within two interactions. Strategy,
+execution, realism, and analyst evaluation remain visibly distinct.

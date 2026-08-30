@@ -10,7 +10,7 @@ If a doc disagrees with the code, either the doc is right and the code is a bug,
 | -------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------- |
 | [`overview.md`](./overview.md)         | **The whole picture** — planes, flows, diagrams, components, status                      | Living                           |
 | [`goals.md`](./goals.md)               | What Sonde is for, what it is explicitly not for, how we call it a win                   | Living                           |
-| [`architecture.md`](./architecture.md) | Planes, dataflow, runtime boundaries, storage, cost model                                | Living                           |
+| [`architecture.md`](./architecture.md) | Planes, dataflow, runtime boundaries, storage, and deployment                            | Living                           |
 | [`roadmap.md`](./roadmap.md)           | Milestone 0..N with goal + exit criteria for each                                        | Living                           |
 | [`glossary.md`](./glossary.md)         | Trading and market-structure terms, defined for people who don't trade                   | Living                           |
 | [`strategy/`](./strategy)              | The thesis, and [`charter.md`](./strategy/charter.md) — universe, sizing, holding period | Living                           |
@@ -34,8 +34,10 @@ If a doc disagrees with the code, either the doc is right and the code is a bug,
 
 New to the project? Read in this order:
 
-0. [`overview.md`](./overview.md) — **the whole system in one document, with diagrams**
-1. [`goals.md`](./goals.md) — the honest framing, including what this will not do
-2. [ADR 0004](./decisions/0004-no-llm-backtests.md) — the single constraint that shapes everything else
-3. [`architecture.md`](./architecture.md) — how the pieces fit
-4. [`roadmap.md`](./roadmap.md) — what gets built, in order
+1. [`overview.md`](./overview.md) — the whole system in one document
+2. [`goals.md`](./goals.md) — the honest framing, including what this will not do
+3. [`../CONTEXT.md`](../CONTEXT.md) — canonical domain language and invariants
+4. [`architecture.md`](./architecture.md) — how the pieces fit
+5. [`specs/evidence-spine.md`](./specs/evidence-spine.md) and
+   [`specs/strategy-v1.md`](./specs/strategy-v1.md) — the first implementation contracts
+6. [`roadmap.md`](./roadmap.md) — what gets built, in order
