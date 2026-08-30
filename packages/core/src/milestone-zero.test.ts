@@ -1,23 +1,60 @@
 import { expect, test } from 'bun:test';
 
-import { AcquisitionAttempt, Decimal, Form4TransactionFact, ParseRun, SourceDocument } from './index';
+import { AcquisitionAttempt, artifactIdFrom, Decimal, Form4TransactionFact, ParseRun, SourceDocument } from './index';
 
 const at = '2026-08-30T00:00:00.000Z';
+const sha = 'a'.repeat(64);
 test('source artifacts reject direct input lineage', () => {
 	expect(
 		SourceDocument.safeParse({
-			id: crypto.randomUUID(),
+			id: sha,
 			kind: 'source-document',
 			schemaVersion: 'm0',
 			recordedAt: at,
 			inputRefs: [{ kind: 'source-document', id: 'x', role: 'bad' }],
-			sha256: 'a'.repeat(64),
+			sha256: sha,
 			byteSize: 1,
 			mediaType: 'text/plain',
 			bytes: new Uint8Array([1]),
 			retentionClass: 'immutable',
 		}).success,
 	).toBe(false);
+});
+test('source document identity is its content hash', () => {
+	expect(
+		SourceDocument.safeParse({
+			id: crypto.randomUUID(),
+			kind: 'source-document',
+			schemaVersion: 'm0',
+			recordedAt: at,
+			inputRefs: [],
+			sha256: sha,
+			byteSize: 1,
+			mediaType: 'text/plain',
+			bytes: new Uint8Array([1]),
+			retentionClass: 'immutable',
+		}).success,
+	).toBe(false);
+	expect(
+		String(
+			SourceDocument.parse({
+				id: sha,
+				kind: 'source-document',
+				schemaVersion: 'm0',
+				recordedAt: at,
+				inputRefs: [],
+				sha256: sha,
+				byteSize: 1,
+				mediaType: 'text/plain',
+				bytes: new Uint8Array([1]),
+				retentionClass: 'immutable',
+			}).id,
+		),
+	).toBe(sha);
+});
+test('derived artifact ids are UUID v5 over their semantic keys', () => {
+	expect(String(artifactIdFrom(`parse-run:sec-form4:m0:${sha}`))).toBe('4b4836e4-f839-5b24-a753-8634576144c8');
+	expect(String(artifactIdFrom(`form4-transaction-fact:m0:${sha}:nonDerivativeTransaction[0]`))).toBe('0f6275f4-3b0a-58f3-9da8-b0973a025b76');
 });
 test('derived artifacts require typed direct lineage', () => {
 	expect(

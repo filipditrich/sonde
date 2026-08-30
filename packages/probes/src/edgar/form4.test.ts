@@ -24,4 +24,10 @@ describe('Form 4 parsing', () => {
 		expect(result.facts).toHaveLength(0);
 		expect(result.failures[0]?.code).toBe('invalid-decimal');
 	});
+	test('repeats the same fact identity for the same document locator', () => {
+		const first = parseForm4Facts(fixture, context).facts[0];
+		const second = parseForm4Facts(fixture, context).facts[0];
+		expect(String(first?.id)).toBe('0f6275f4-3b0a-58f3-9da8-b0973a025b76');
+		expect(second?.id).toBe(first?.id);
+	});
 });

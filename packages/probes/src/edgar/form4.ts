@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 
 import {
+	artifactIdFrom,
 	Cik,
 	Decimal,
 	Form4TransactionFact,
@@ -10,6 +11,9 @@ import {
 	type SecAcceptedAt,
 	type Sha256,
 } from '@sonde/core';
+
+export const FORM4_PARSER = 'sec-form4';
+export const FORM4_PARSER_VERSION = 'm0';
 
 type Raw = Record<string, unknown>;
 const parser = new XMLParser({ ignoreAttributes: true, parseTagValue: false });
@@ -56,7 +60,7 @@ const factFrom = (header: FormHeader, transaction: Raw, locator: string, context
 	const coding = (transaction.transactionCoding ?? {}) as Raw;
 	const ownership = (transaction.ownershipNature ?? {}) as Raw;
 	return Form4TransactionFact.parse({
-		id: crypto.randomUUID(),
+		id: artifactIdFrom(`form4-transaction-fact:${FORM4_PARSER_VERSION}:${context.documentSha256}:${locator}`),
 		kind: 'form4-transaction-fact',
 		schemaVersion: 'm0',
 		recordedAt: context.recordedAt,

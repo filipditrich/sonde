@@ -1,6 +1,22 @@
+import { createHash } from 'node:crypto';
 import * as z from 'zod';
 
 import { Decimal, Sha256 } from './primitives';
+
+/** Stable namespace for Milestone 0 artifact identities. Changing it rewrites history. */
+const SONDE_EVIDENCE_NAMESPACE = '3c8a1e2f-5b64-4d1a-9c7e-0f2a4b6d8e10';
+
+/** UUID v5 so re-deriving the same semantic key is a no-op instead of a new row. */
+export const artifactIdFrom = (name: string, namespace = SONDE_EVIDENCE_NAMESPACE): ArtifactId => {
+	const digest = createHash('sha1')
+		.update(Buffer.from(namespace.replaceAll('-', ''), 'hex'))
+		.update(name, 'utf8')
+		.digest();
+	digest[6] = (digest[6]! & 0x0f) | 0x50;
+	digest[8] = (digest[8]! & 0x3f) | 0x80;
+	const hex = digest.subarray(0, 16).toString('hex');
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` as ArtifactId;
+};
 
 export const ArtifactId = z.uuid().brand<'ArtifactId'>();
 export type ArtifactId = z.infer<typeof ArtifactId>;
@@ -90,14 +106,18 @@ export const AcquisitionAttempt = envelope('acquisition-attempt', true).extend({
 });
 export type AcquisitionAttempt = z.infer<typeof AcquisitionAttempt>;
 
-export const SourceDocument = envelope('source-document', true).extend({
-	sha256: Sha256,
-	byteSize: z.number().int().nonnegative(),
-	mediaType: z.string().min(1),
-	encoding: z.string().min(1).optional(),
-	bytes: z.instanceof(Uint8Array),
-	retentionClass: z.string().min(1),
-});
+export const SourceDocument = envelope('source-document', true)
+	.omit({ id: true })
+	.extend({
+		id: Sha256,
+		sha256: Sha256,
+		byteSize: z.number().int().nonnegative(),
+		mediaType: z.string().min(1),
+		encoding: z.string().min(1).optional(),
+		bytes: z.instanceof(Uint8Array),
+		retentionClass: z.string().min(1),
+	})
+	.refine((value) => value.id === value.sha256, 'source document identity is its content hash');
 export type SourceDocument = z.infer<typeof SourceDocument>;
 export const ParseRun = envelope('parse-run')
 	.extend({
