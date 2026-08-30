@@ -110,3 +110,44 @@ export const ingestEdgarReconciliation = async (
 	);
 	return { documents: documents.length, facts };
 };
+
+const unconfigured = (name: string) => ({
+	name,
+	lane: 'ordinary' as const,
+	run: async () => {
+		throw new Error(`${name} adapter requires explicit runtime configuration`);
+	},
+});
+
+/** Wires the four ordinary M0 jobs. Reconcile always uses the daily master index. */
+export const createOrdinaryJobs = (input: {
+	fetcher: PoliteFetcher;
+	writer: EvidenceWriter;
+	now?: () => Date;
+}): import('./composition').EngineJobs => {
+	const now = input.now ?? (() => new Date());
+	return {
+		edgarLive: {
+			name: 'edgar-live',
+			lane: 'ordinary',
+			run: async () => {
+				const result = await ingestEdgarPoll(input.fetcher, input.writer, now);
+				return {
+					outcome: result.gapDetected ? 'gap-detected' : 'ok',
+					meta: { documents: String(result.documents), facts: String(result.facts), gapDetected: String(result.gapDetected) },
+				};
+			},
+		},
+		edgarReconcile: {
+			name: 'edgar-reconcile',
+			lane: 'ordinary',
+			run: async () => {
+				const date = previousEasternDate(now());
+				const result = await ingestEdgarReconciliation(input.fetcher, date, input.writer, now);
+				return { outcome: 'ok', meta: { date, documents: String(result.documents), facts: String(result.facts) } };
+			},
+		},
+		calendarRefresh: unconfigured('calendar-refresh'),
+		sipDailyBars: unconfigured('sip-daily-bars'),
+	};
+};

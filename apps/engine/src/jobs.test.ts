@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { FetchResult, PoliteFetcher } from '@sonde/probes';
 
-import { ingestEdgarPoll, ingestEdgarReconciliation, previousEasternDate, type EvidenceWriter } from './jobs';
+import { createOrdinaryJobs, ingestEdgarPoll, ingestEdgarReconciliation, previousEasternDate, type EvidenceWriter } from './jobs';
 
 const listing = await Bun.file(new URL('../../../packages/probes/src/edgar/__fixtures__/index.json', import.meta.url)).text();
 const form = await Bun.file(new URL('../../../packages/probes/src/edgar/__fixtures__/form4-single-purchase.xml', import.meta.url)).text();
@@ -125,4 +125,21 @@ describe('EDGAR jobs', () => {
 
 test('previous Eastern date is the session before the current New York civil date', () => {
 	expect(previousEasternDate(new Date('2026-08-21T08:00:00.000Z'))).toBe('2026-08-20');
+});
+
+test('reconcile job fetches the previous Eastern-day master index, never the live feed', async () => {
+	const urls: string[] = [];
+	const jobs = createOrdinaryJobs({
+		fetcher: {
+			get: async (url: string) => {
+				urls.push(url);
+				return ok(url.endsWith('.idx') ? master : url.endsWith('.txt') ? submission : url.endsWith('index.json') ? listing : form);
+			},
+		} as unknown as PoliteFetcher,
+		writer: writerWith([]),
+		now: () => new Date('2026-08-21T08:00:00.000Z'),
+	});
+	expect(await jobs.edgarReconcile.run()).toMatchObject({ outcome: 'ok', meta: { date: '2026-08-20' } });
+	expect(urls.some((url) => url.includes('master.20260820.idx'))).toBe(true);
+	expect(urls.some((url) => url.includes('getcurrent'))).toBe(false);
 });
