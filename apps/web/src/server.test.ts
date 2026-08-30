@@ -13,7 +13,7 @@ const app = createCockpitServer(
 				asOf: '2026-08-30T00:00:00.000Z',
 				funnel: { documents: 0, transactions: 0, qualifyingPurchases: 0 },
 				facts: [],
-				health: [],
+				health: [{ job: 'edgar-live', lastEventAt: '2026-08-30T00:00:00.000Z', freshness: 'quiet' }],
 			}) as unknown as CockpitSnapshot,
 		eventsAfter: async (cursor) =>
 			(cursor === 1
@@ -46,5 +46,7 @@ describe('cockpit server', () => {
 		expect(payload).toContain('id: 2');
 		expect(payload).toContain('data:');
 		expect(payload).not.toContain('event: artifact');
+		const page = await app.fetch(new Request('http://local/', { headers }));
+		expect(await page.text()).toContain('quiet');
 	});
 });

@@ -21,6 +21,7 @@ const assertDocumentHash = (bytes: Uint8Array, sha256: string) => {
 };
 
 import type { Database } from './client';
+import { freshnessOf, ORDINARY_JOBS } from './cockpit-health';
 import {
 	acquisitionAttempts,
 	cockpitEvents,
@@ -272,13 +273,20 @@ const toForm4Fact = (fact: typeof form4TransactionFacts.$inferSelect): Form4Tran
 		observedAt: fact.observedAt.toISOString(),
 	});
 
-const projectHealth = (events: (typeof jobRunEvents.$inferSelect)[]) => [
-	...new Map(
-		events
-			.toReversed()
-			.map((event) => [event.job, { job: event.job, lastEventAt: event.at.toISOString(), ...(event.outcome ? { outcome: event.outcome } : {}) }]),
-	).values(),
-];
+const projectHealth = (events: (typeof jobRunEvents.$inferSelect)[], asOf: Date) => {
+	const latest = new Map(events.toReversed().map((event) => [event.job, event]));
+	return ORDINARY_JOBS.map((job) => {
+		const event = latest.get(job);
+		if (!event) return { job, lastEventAt: asOf.toISOString(), freshness: 'unseen' as const };
+		const meta = event.meta && typeof event.meta === 'object' && !Array.isArray(event.meta) ? (event.meta as Record<string, string>) : {};
+		return {
+			job,
+			lastEventAt: event.at.toISOString(),
+			...(event.outcome ? { outcome: event.outcome } : {}),
+			freshness: freshnessOf({ job, lastEventAt: event.at.toISOString(), event: event.event, outcome: event.outcome ?? undefined, meta, asOf }),
+		};
+	});
+};
 
 export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Promise<CockpitSnapshot> => {
 	const facts = await asOfForm4Facts(db, asOf.toISOString() as ObservedAt, 20);
@@ -289,7 +297,7 @@ export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Prom
 		asOf: asOf.toISOString() as CockpitSnapshotType['asOf'],
 		funnel: await readFunnelAsOf(db, asOf),
 		facts: facts.map(toForm4Fact),
-		health: projectHealth(events),
+		health: projectHealth(events, asOf),
 	});
 };
 

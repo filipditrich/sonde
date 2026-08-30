@@ -237,7 +237,14 @@ export const CockpitSnapshot = z.object({
 		qualifyingPurchases: z.number().int().nonnegative(),
 	}),
 	facts: z.array(Form4TransactionFact),
-	health: z.array(z.object({ job: z.string(), lastEventAt: RecordedAt, outcome: z.string().optional() })),
+	health: z.array(
+		z.object({
+			job: z.string(),
+			lastEventAt: RecordedAt,
+			outcome: z.string().optional(),
+			freshness: z.enum(['fresh', 'quiet', 'stale', 'unseen']),
+		}),
+	),
 });
 export type CockpitSnapshot = z.infer<typeof CockpitSnapshot>;
 export const CockpitStreamEvent = z.object({
