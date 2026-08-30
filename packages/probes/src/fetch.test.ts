@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { PoliteFetcher } from './fetch';
+import { fetchFailureCode, PoliteFetcher } from './fetch';
 
 const profile = { name: 'test', userAgent: 'test@example.com', minIntervalMs: 0, conditional: true };
 test('captures successful, unchanged, and failed requests exactly once', async () => {
@@ -25,4 +25,7 @@ test('captures successful, unchanged, and failed requests exactly once', async (
 	expect(unchanged.status).toBe('unchanged');
 	expect(failed.status).toBe('failed');
 	expect(captures).toEqual(['https://test/ok:ok', 'https://test/unchanged:unchanged', 'https://test/fail:failed']);
+	expect(fetchFailureCode(ok)).toBeUndefined();
+	expect(fetchFailureCode(unchanged)).toBe('not-modified');
+	expect(failed.status === 'failed' && fetchFailureCode(failed)).toBe('http-error');
 });

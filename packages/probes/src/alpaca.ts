@@ -9,7 +9,7 @@ import {
 	type RecordedAt,
 } from '@sonde/core';
 
-import type { FetchResult } from './fetch';
+import { fetchFailureCode, type FetchResult } from './fetch';
 
 export type AlpacaFetch = (url: string, init: RequestInit) => Promise<Response>;
 export type AlpacaCredentials = { readonly key: string; readonly secret: string };
@@ -167,7 +167,7 @@ export const fetchSipDailyBars = async (input: {
 	url.searchParams.set('limit', '1000');
 	const now = input.now ?? (() => new Date());
 	const capture = await requestAlpaca(url.toString(), input.credentials, input.fetchImpl ?? globalThis.fetch, now);
-	if (capture.result.status !== 'ok') return { capture, bars: [], failure: capture.result.failure.code };
+	if (capture.result.status !== 'ok') return { capture, bars: [], failure: fetchFailureCode(capture.result) ?? 'alpaca-unknown' };
 	let payload: { bars?: WireBar[] };
 	try {
 		payload = parseLosslessBars(capture.result.body);
@@ -236,7 +236,7 @@ export const fetchAlpacaCalendar = async (input: {
 }): Promise<{ capture: AlpacaCapture; sessions: readonly MarketSessionCandidate[]; failure?: string }> => {
 	const now = input.now ?? (() => new Date());
 	const capture = await requestAlpaca(`${ALPACA_PAPER_URL}/v2/calendar`, input.credentials, input.fetchImpl ?? globalThis.fetch, now);
-	if (capture.result.status !== 'ok') return { capture, sessions: [], failure: capture.result.failure.code };
+	if (capture.result.status !== 'ok') return { capture, sessions: [], failure: fetchFailureCode(capture.result) ?? 'alpaca-unknown' };
 	let rows: Array<{ date?: string; open?: string; close?: string }>;
 	try {
 		rows = JSON.parse(capture.result.body) as Array<{ date?: string; open?: string; close?: string }>;
