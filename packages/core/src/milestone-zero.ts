@@ -18,6 +18,9 @@ export const artifactIdFrom = (name: string, namespace = SONDE_EVIDENCE_NAMESPAC
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` as ArtifactId;
 };
 
+export const parseRunIdFrom = (documentSha256: string, parser: string, parserVersion: string) =>
+	artifactIdFrom(`parse-run:${parser}:${parserVersion}:${documentSha256}`);
+
 export const ArtifactId = z.uuid().brand<'ArtifactId'>();
 export type ArtifactId = z.infer<typeof ArtifactId>;
 const Instant = z.iso.datetime({ offset: true });

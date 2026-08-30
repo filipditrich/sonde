@@ -2,13 +2,13 @@ import { type FetchResult, type PoliteFetcher, edgar } from '@sonde/probes';
 
 export type EvidenceWriter = {
 	persistFetch(input: { source: string; resource: string; result: FetchResult }): Promise<{ attemptId: string; documentSha256?: string }>;
-	appendParse(input: {
+	commitParse(input: {
 		documentSha256: string;
 		status: 'succeeded' | 'partial' | 'failed';
 		recordedAt: string;
 		failure?: { code: string; detail: string };
+		facts: ReturnType<typeof edgar.parseForm4Facts>['facts'];
 	}): Promise<string>;
-	appendFacts(parseRunId: string, facts: ReturnType<typeof edgar.parseForm4Facts>['facts']): Promise<void>;
 };
 
 type PersistedReceipt = { attemptId: string; documentSha256?: string };
@@ -38,16 +38,14 @@ const parseCapturedDocuments = async (
 			recordedAt: recordedAt as never,
 		});
 		const failure = parsed.failures[0];
-		const parseRunId = await writer.appendParse({
+		await writer.commitParse({
 			documentSha256: hash,
 			status: failure ? (parsed.facts.length ? 'partial' : 'failed') : 'succeeded',
 			recordedAt,
+			facts: parsed.facts,
 			...(failure ? { failure: { code: failure.code, detail: failure.detail } } : {}),
 		});
-		if (parsed.facts.length) {
-			await writer.appendFacts(parseRunId, parsed.facts);
-			facts += parsed.facts.length;
-		}
+		facts += parsed.facts.length;
 	}
 	return facts;
 };

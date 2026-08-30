@@ -30,12 +30,10 @@ const writerWith = (sequence: string[]): EvidenceWriter => ({
 		sequence.push(`attempt:${result.status}:${resource}`);
 		return { attemptId: crypto.randomUUID(), ...(result.status === 'ok' ? { documentSha256: 'a'.repeat(64) } : {}) };
 	},
-	appendParse: async () => {
+	commitParse: async ({ facts }) => {
 		sequence.push('parse');
-		return crypto.randomUUID();
-	},
-	appendFacts: async (_, facts) => {
 		sequence.push(`facts:${facts[0]?.transactionCode}`);
+		return crypto.randomUUID();
 	},
 });
 

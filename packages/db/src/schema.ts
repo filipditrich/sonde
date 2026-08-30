@@ -1,5 +1,9 @@
 import { bigint, boolean, customType, index, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
+import type { InputReference } from '@sonde/core';
+
+const inputRefs = jsonb('input_refs').$type<InputReference[]>().notNull();
+
 const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
 	dataType: () => 'bytea',
 	toDriver: (value) => Buffer.from(value),
@@ -40,20 +44,25 @@ export const sourceDocuments = pgTable('m0_source_documents', {
 	retentionClass: text('retention_class').notNull(),
 	recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
 });
-export const parseRuns = pgTable('m0_parse_runs', {
-	id: uuid('id').primaryKey(),
-	schemaVersion: text('schema_version').notNull().default('m0'),
-	documentSha256: text('document_sha256')
-		.notNull()
-		.references(() => sourceDocuments.sha256),
-	parser: text('parser').notNull(),
-	parserVersion: text('parser_version').notNull(),
-	startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
-	completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
-	status: text('status').notNull(),
-	failure: jsonb('failure'),
-	recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
-});
+export const parseRuns = pgTable(
+	'm0_parse_runs',
+	{
+		id: uuid('id').primaryKey(),
+		schemaVersion: text('schema_version').notNull().default('m0'),
+		documentSha256: text('document_sha256')
+			.notNull()
+			.references(() => sourceDocuments.sha256),
+		parser: text('parser').notNull(),
+		parserVersion: text('parser_version').notNull(),
+		startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+		completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
+		status: text('status').notNull(),
+		failure: jsonb('failure'),
+		inputRefs,
+		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+	},
+	(table) => [uniqueIndex('m0_parse_run_semantic_key').on(table.documentSha256, table.parser, table.parserVersion)],
+);
 export const form4TransactionFacts = pgTable(
 	'm0_form4_transaction_facts',
 	{
@@ -86,6 +95,7 @@ export const form4TransactionFacts = pgTable(
 		sourceLocator: text('source_locator').notNull(),
 		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
 		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
 	},
 	(table) => [
 		uniqueIndex('m0_form4_semantic_key').on(table.documentSha256, table.sourceLocator),
@@ -158,6 +168,7 @@ export const sipDailyBars = pgTable(
 		vwap: numeric('vwap'),
 		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
 		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
 	},
 	(table) => [primaryKey({ columns: [table.listingId, table.sessionDate, table.feed, table.adjustment] })],
 );
@@ -177,6 +188,7 @@ export const marketSessions = pgTable(
 		source: text('source').notNull(),
 		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
 		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
 	},
 	(table) => [uniqueIndex('m0_market_session_key').on(table.calendarVersion, table.sessionDate)],
 );

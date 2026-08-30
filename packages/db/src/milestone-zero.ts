@@ -1,4 +1,5 @@
 import { desc, eq, gt, lte, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 
 import {
 	CockpitSnapshot,
@@ -9,7 +10,15 @@ import {
 	type CockpitStreamEvent as CockpitStreamEventType,
 	type Form4TransactionFact as Form4TransactionFactType,
 	type ObservedAt,
+	type ParseRun,
 } from '@sonde/core';
+
+const digestSha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const assertDocumentHash = (bytes: Uint8Array, sha256: string) => {
+	const digest = digestSha256(bytes);
+	if (digest !== sha256) throw new Error('source document hash mismatch');
+	return digest;
+};
 
 import type { Database } from './client';
 import {
@@ -34,7 +43,8 @@ export const persistAcquisition = async (
 	document?: { bytes: Uint8Array; mediaType: string; retentionClass: string },
 ) =>
 	db.transaction(async (tx) => {
-		if (document && attempt.documentSha256)
+		if (document && attempt.documentSha256) {
+			assertDocumentHash(document.bytes, attempt.documentSha256);
 			await tx
 				.insert(sourceDocuments)
 				.values({
@@ -46,6 +56,7 @@ export const persistAcquisition = async (
 					recordedAt: new Date(attempt.recordedAt),
 				})
 				.onConflictDoNothing();
+		}
 		await tx.insert(acquisitionAttempts).values({
 			id: attempt.id,
 			source: attempt.source,
@@ -66,40 +77,71 @@ export const persistAcquisition = async (
 		});
 	});
 export const appendParseRun = async (db: Database, input: typeof parseRuns.$inferInsert) => db.insert(parseRuns).values(input);
+export const readSourceDocument = async (db: Database, sha256: string) => {
+	const [row] = await db.select().from(sourceDocuments).where(eq(sourceDocuments.sha256, sha256)).limit(1);
+	if (!row) return undefined;
+	assertDocumentHash(row.bytes, row.sha256);
+	return row;
+};
+const factRow = (fact: Form4TransactionFactType, parseRunId: string) => ({
+	id: fact.id,
+	parseRunId,
+	documentSha256: fact.documentSha256,
+	accession: fact.accession,
+	issuerCik: fact.issuerCik,
+	issuerName: fact.issuerName,
+	issuerTicker: fact.issuerTicker,
+	reportingOwnerCik: fact.reportingOwnerCik,
+	reportingOwnerName: fact.reportingOwnerName,
+	isDirector: fact.isDirector,
+	isOfficer: fact.isOfficer,
+	isTenPercentOwner: fact.isTenPercentOwner,
+	acceptedAt: new Date(fact.sourceClock.acceptedAt),
+	transactionDate: fact.transactionDate,
+	securityTitle: fact.securityTitle,
+	transactionCode: fact.transactionCode,
+	acquiredDisposed: fact.acquiredDisposed,
+	ownership: fact.ownership,
+	shares: fact.shares,
+	pricePerShare: fact.pricePerShare,
+	footnoteRefs: fact.footnoteRefs,
+	sourceLocator: fact.sourceLocator,
+	observedAt: new Date(fact.observedAt),
+	recordedAt: new Date(fact.recordedAt),
+	inputRefs: fact.inputRefs,
+});
 export const appendForm4Facts = async (db: Database, parseRunId: string, facts: readonly Form4TransactionFactType[]) => {
 	if (facts.length === 0) return;
 	await db
 		.insert(form4TransactionFacts)
-		.values(
-			facts.map((fact) => ({
-				id: fact.id,
-				parseRunId,
-				documentSha256: fact.documentSha256,
-				accession: fact.accession,
-				issuerCik: fact.issuerCik,
-				issuerName: fact.issuerName,
-				issuerTicker: fact.issuerTicker,
-				reportingOwnerCik: fact.reportingOwnerCik,
-				reportingOwnerName: fact.reportingOwnerName,
-				isDirector: fact.isDirector,
-				isOfficer: fact.isOfficer,
-				isTenPercentOwner: fact.isTenPercentOwner,
-				acceptedAt: new Date(fact.sourceClock.acceptedAt),
-				transactionDate: fact.transactionDate,
-				securityTitle: fact.securityTitle,
-				transactionCode: fact.transactionCode,
-				acquiredDisposed: fact.acquiredDisposed,
-				ownership: fact.ownership,
-				shares: fact.shares,
-				pricePerShare: fact.pricePerShare,
-				footnoteRefs: fact.footnoteRefs,
-				sourceLocator: fact.sourceLocator,
-				observedAt: new Date(fact.observedAt),
-				recordedAt: new Date(fact.recordedAt),
-			})),
-		)
+		.values(facts.map((fact) => factRow(fact, parseRunId)))
 		.onConflictDoNothing();
 };
+/** A parse run commits either its complete fact set or a typed failure; acquisition is already durable. */
+export const commitParse = async (db: Database, run: ParseRun, facts: readonly Form4TransactionFactType[] = []) =>
+	db.transaction(async (tx) => {
+		await tx
+			.insert(parseRuns)
+			.values({
+				id: run.id,
+				documentSha256: run.documentSha256,
+				parser: run.parser,
+				parserVersion: run.parserVersion,
+				startedAt: new Date(run.startedAt),
+				completedAt: new Date(run.completedAt),
+				status: run.status,
+				failure: run.failure,
+				inputRefs: run.inputRefs,
+				recordedAt: new Date(run.recordedAt),
+			})
+			.onConflictDoNothing();
+		if (facts.length)
+			await tx
+				.insert(form4TransactionFacts)
+				.values(facts.map((fact) => factRow(fact, run.id)))
+				.onConflictDoNothing();
+		return run.id;
+	});
 export const appendJobRunEvent = async (db: Database, event: import('@sonde/core').JobRunEvent) =>
 	db.insert(jobRunEvents).values({
 		id: event.id,
@@ -126,6 +168,7 @@ export const appendMarketSession = async (db: Database, session: import('@sonde/
 			source: session.source,
 			observedAt: new Date(session.observedAt),
 			recordedAt: new Date(session.recordedAt),
+			inputRefs: session.inputRefs,
 		})
 		.onConflictDoNothing();
 export const appendSipDailyBar = async (db: Database, bar: import('@sonde/core').SipDailyBar, acquisitionAttemptId: string) =>
@@ -145,6 +188,7 @@ export const appendSipDailyBar = async (db: Database, bar: import('@sonde/core')
 			vwap: bar.vwap,
 			observedAt: new Date(bar.observedAt),
 			recordedAt: new Date(bar.recordedAt),
+			inputRefs: bar.inputRefs,
 		})
 		.onConflictDoNothing();
 

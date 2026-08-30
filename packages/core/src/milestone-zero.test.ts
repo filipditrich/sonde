@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { AcquisitionAttempt, artifactIdFrom, Decimal, Form4TransactionFact, ParseRun, SourceDocument } from './index';
+import { AcquisitionAttempt, artifactIdFrom, Decimal, Form4TransactionFact, ParseRun, parseRunIdFrom, SourceDocument } from './index';
 
 const at = '2026-08-30T00:00:00.000Z';
 const sha = 'a'.repeat(64);
@@ -53,7 +53,7 @@ test('source document identity is its content hash', () => {
 	).toBe(sha);
 });
 test('derived artifact ids are UUID v5 over their semantic keys', () => {
-	expect(String(artifactIdFrom(`parse-run:sec-form4:m0:${sha}`))).toBe('4b4836e4-f839-5b24-a753-8634576144c8');
+	expect(String(parseRunIdFrom(sha, 'sec-form4', 'm0'))).toBe('4b4836e4-f839-5b24-a753-8634576144c8');
 	expect(String(artifactIdFrom(`form4-transaction-fact:m0:${sha}:nonDerivativeTransaction[0]`))).toBe('0f6275f4-3b0a-58f3-9da8-b0973a025b76');
 });
 test('derived artifacts require typed direct lineage', () => {

@@ -1,9 +1,8 @@
-import { AcquisitionAttempt } from '@sonde/core';
+import { AcquisitionAttempt, ParseRun, parseRunIdFrom } from '@sonde/core';
 import {
-	appendForm4Facts,
 	appendMarketSession,
-	appendParseRun,
 	appendSipDailyBar,
+	commitParse,
 	persistAcquisition,
 	readRuntimeCheckpoint,
 	saveRuntimeCheckpoint,
@@ -50,22 +49,24 @@ export const createEvidenceWriter = (db: Database): EngineRepository => ({
 		);
 		return { attemptId: attempt.id, ...(documentSha256 ? { documentSha256 } : {}) };
 	},
-	appendParse: async (input) => {
-		const id = crypto.randomUUID();
-		await appendParseRun(db, {
-			id,
+	commitParse: async (input) => {
+		const run = ParseRun.parse({
+			id: parseRunIdFrom(input.documentSha256, edgar.FORM4_PARSER, edgar.FORM4_PARSER_VERSION),
+			kind: 'parse-run',
+			schemaVersion: 'm0',
+			recordedAt: input.recordedAt,
+			inputRefs: [{ kind: 'source-document', id: input.documentSha256, role: 'parsed-document' }],
 			documentSha256: input.documentSha256,
-			parser: 'sec-form4',
-			parserVersion: 'm0',
-			startedAt: new Date(input.recordedAt),
-			completedAt: new Date(input.recordedAt),
+			parser: edgar.FORM4_PARSER,
+			parserVersion: edgar.FORM4_PARSER_VERSION,
+			startedAt: input.recordedAt,
+			completedAt: input.recordedAt,
 			status: input.status,
-			failure: input.failure,
-			recordedAt: new Date(input.recordedAt),
+			...(input.failure ? { failure: input.failure } : {}),
 		});
-		return id;
+		await commitParse(db, run, input.facts);
+		return run.id;
 	},
-	appendFacts: (parseRunId, facts) => appendForm4Facts(db, parseRunId, facts),
 	appendMarketSessions: async (acquisitionAttemptId, sessions) => {
 		for (const session of sessions) await appendMarketSession(db, session, acquisitionAttemptId);
 	},
