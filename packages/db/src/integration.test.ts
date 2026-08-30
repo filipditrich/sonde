@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 
 import { AcquisitionAttempt, Form4TransactionFact, ParseRun, parseRunIdFrom, type ObservedAt } from '@sonde/core';
 
@@ -216,6 +217,30 @@ suite('M0 PostgreSQL evidence contract', () => {
 			sql`SELECT (SELECT count(*)::int FROM m0_parse_runs WHERE document_sha256=${documentSha256}) AS runs, (SELECT count(*)::int FROM m0_form4_transaction_facts WHERE document_sha256=${documentSha256}) AS facts`,
 		);
 		expect(counts[0]).toEqual({ runs: 1, facts: 1 });
+	});
+	test('commitParse records an issuer and listing from a Form 4 trading symbol', async () => {
+		const bytes = new Uint8Array([1, 2, 4]);
+		const documentSha256 = createHash('sha256').update(bytes).digest('hex');
+		await persistAcquisition(db, attemptFor('0199a1f0-0000-7000-8000-000000000025', documentSha256, later), {
+			bytes,
+			mediaType: 'application/xml',
+			retentionClass: 'immutable',
+		});
+		const run = parseRunFor(documentSha256, later);
+		await commitParse(db, run, [
+			Form4TransactionFact.parse({
+				...factFor(documentSha256, later, '2'),
+				id: '0199a1f0-0000-7000-8000-000000000026',
+				issuerCik: '0001111111',
+				issuerName: 'Listed Co',
+				issuerTicker: 'LIST',
+				sourceLocator: 'nonDerivativeTransaction[listed]',
+			}),
+		]);
+		const listing = await db.execute<{ ticker: string; cik: string }>(
+			sql`SELECT listing.ticker, issuer.cik FROM m0_listings listing JOIN m0_issuers issuer ON issuer.id = listing.issuer_id WHERE listing.ticker = 'LIST'`,
+		);
+		expect(listing[0]).toEqual({ ticker: 'LIST', cik: '0001111111' });
 	});
 	test('sonde_web can read evidence and cannot insert it', async () => {
 		await db.execute(sql`SET ROLE sonde_web`);

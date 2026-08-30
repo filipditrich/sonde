@@ -11,6 +11,7 @@ import {
 	type Form4TransactionFact as Form4TransactionFactType,
 	type ObservedAt,
 	type ParseRun,
+	artifactIdFrom,
 } from '@sonde/core';
 
 const digestSha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -26,6 +27,7 @@ import {
 	acquisitionAttempts,
 	cockpitEvents,
 	form4TransactionFacts,
+	issuers,
 	jobRunEvents,
 	listings,
 	marketSessions,
@@ -112,6 +114,35 @@ const factRow = (fact: Form4TransactionFactType, parseRunId: string) => ({
 	recordedAt: new Date(fact.recordedAt),
 	inputRefs: fact.inputRefs,
 });
+const upsertListingsFromFacts = async (tx: Pick<Database, 'insert'>, facts: readonly Form4TransactionFactType[]) => {
+	for (const fact of facts) {
+		if (!fact.issuerTicker) continue;
+		const issuerId = artifactIdFrom(`issuer:m0:${fact.issuerCik}`);
+		await tx
+			.insert(issuers)
+			.values({
+				id: issuerId,
+				cik: fact.issuerCik,
+				legalName: fact.issuerName,
+				effectiveFrom: fact.transactionDate,
+				recordedAt: new Date(fact.recordedAt),
+			})
+			.onConflictDoNothing();
+		await tx
+			.insert(listings)
+			.values({
+				id: artifactIdFrom(`listing:m0:${fact.issuerCik}:${fact.issuerTicker}`),
+				issuerId,
+				ticker: fact.issuerTicker,
+				venue: 'unspecified',
+				securityType: 'common',
+				effectiveFrom: fact.transactionDate,
+				recordedAt: new Date(fact.recordedAt),
+			})
+			.onConflictDoNothing();
+	}
+};
+
 export const appendForm4Facts = async (db: Database, parseRunId: string, facts: readonly Form4TransactionFactType[]) => {
 	if (facts.length === 0) return;
 	await db
@@ -142,6 +173,7 @@ export const commitParse = async (db: Database, run: ParseRun, facts: readonly F
 				.insert(form4TransactionFacts)
 				.values(facts.map((fact) => factRow(fact, run.id)))
 				.onConflictDoNothing();
+		await upsertListingsFromFacts(tx, facts);
 		return run.id;
 	});
 export const appendJobRunEvent = async (db: Database, event: import('@sonde/core').JobRunEvent) =>
