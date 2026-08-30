@@ -17,4 +17,7 @@ const scheduler = new Scheduler({
 });
 const writer = createEvidenceWriter(db);
 const fetcher = new PoliteFetcher(secProfile(contact));
-startEngine(scheduler, createOrdinaryJobs({ fetcher, writer }));
+const key = process.env.ALPACA_API_KEY_ID;
+const secret = process.env.ALPACA_API_SECRET_KEY;
+const alpaca = key && secret ? { credentials: { key, secret } } : undefined;
+startEngine(scheduler, createOrdinaryJobs({ fetcher, writer, ...(alpaca ? { alpaca } : {}) }));

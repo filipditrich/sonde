@@ -1,4 +1,13 @@
-import { type FetchResult, type PoliteFetcher, edgar } from '@sonde/probes';
+import type { ArtifactId, MarketSession } from '@sonde/core';
+import {
+	type AlpacaCredentials,
+	type AlpacaFetch,
+	type FetchResult,
+	type PoliteFetcher,
+	edgar,
+	fetchAlpacaCalendar,
+	materializeMarketSessions,
+} from '@sonde/probes';
 
 export type EvidenceWriter = {
 	persistFetch(input: { source: string; resource: string; result: FetchResult }): Promise<{ attemptId: string; documentSha256?: string }>;
@@ -11,6 +20,7 @@ export type EvidenceWriter = {
 	}): Promise<string>;
 	loadCheckpoint<T>(key: string): Promise<T | undefined>;
 	saveCheckpoint(key: string, value: object): Promise<void>;
+	appendMarketSessions?(acquisitionAttemptId: string, sessions: readonly MarketSession[]): Promise<void>;
 };
 
 const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
@@ -111,6 +121,26 @@ export const ingestEdgarReconciliation = async (
 	return { documents: documents.length, facts };
 };
 
+/** Persist the Alpaca calendar capture first; sessions are derived only from those bytes. */
+export const ingestAlpacaCalendar = async (
+	writer: EvidenceWriter,
+	credentials: AlpacaCredentials,
+	options: { fetchImpl?: AlpacaFetch; now?: () => Date; calendarVersion?: string } = {},
+): Promise<{ sessions: number; failure?: string }> => {
+	const now = options.now ?? (() => new Date());
+	const { capture, sessions, failure } = await fetchAlpacaCalendar({
+		credentials,
+		fetchImpl: options.fetchImpl,
+		now,
+		calendarVersion: options.calendarVersion ?? 'alpaca-m0',
+	});
+	const { attemptId } = await writer.persistFetch({ source: 'alpaca', resource: capture.resource, result: capture.result });
+	if (failure || !writer.appendMarketSessions) return { sessions: 0, failure: failure ?? 'calendar-writer-missing' };
+	const materialized = materializeMarketSessions(sessions, attemptId as ArtifactId);
+	await writer.appendMarketSessions(attemptId, materialized);
+	return { sessions: materialized.length };
+};
+
 const unconfigured = (name: string) => ({
 	name,
 	lane: 'ordinary' as const,
@@ -124,6 +154,7 @@ export const createOrdinaryJobs = (input: {
 	fetcher: PoliteFetcher;
 	writer: EvidenceWriter;
 	now?: () => Date;
+	alpaca?: { credentials: AlpacaCredentials; fetchImpl?: AlpacaFetch };
 }): import('./composition').EngineJobs => {
 	const now = input.now ?? (() => new Date());
 	return {
@@ -147,7 +178,18 @@ export const createOrdinaryJobs = (input: {
 				return { outcome: 'ok', meta: { date, documents: String(result.documents), facts: String(result.facts) } };
 			},
 		},
-		calendarRefresh: unconfigured('calendar-refresh'),
+		calendarRefresh: input.alpaca
+			? {
+					name: 'calendar-refresh',
+					lane: 'ordinary',
+					run: async () => {
+						const result = await ingestAlpacaCalendar(input.writer, input.alpaca!.credentials, { fetchImpl: input.alpaca!.fetchImpl, now });
+						return result.failure
+							? { outcome: 'failed', meta: { failure: result.failure, sessions: String(result.sessions) } }
+							: { outcome: 'ok', meta: { sessions: String(result.sessions) } };
+					},
+				}
+			: unconfigured('calendar-refresh'),
 		sipDailyBars: unconfigured('sip-daily-bars'),
 	};
 };

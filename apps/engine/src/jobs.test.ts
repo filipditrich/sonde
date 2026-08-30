@@ -143,3 +143,49 @@ test('reconcile job fetches the previous Eastern-day master index, never the liv
 	expect(urls.some((url) => url.includes('master.20260820.idx'))).toBe(true);
 	expect(urls.some((url) => url.includes('getcurrent'))).toBe(false);
 });
+
+test('calendar job persists the Alpaca paper calendar and materializes sessions', async () => {
+	const sequence: string[] = [];
+	const stored: string[] = [];
+	const writer = {
+		...writerWith(sequence),
+		appendMarketSessions: async (_id: string, sessions: readonly { sessionDate: string }[]) => {
+			stored.push(...sessions.map((session) => session.sessionDate));
+		},
+	};
+	const jobs = createOrdinaryJobs({
+		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
+		writer,
+		now: () => new Date('2026-08-21T16:00:00.000Z'),
+		alpaca: {
+			credentials: { key: 'k', secret: 's' },
+			fetchImpl: async () =>
+				new Response(JSON.stringify([{ date: '2026-08-20', open: '09:30', close: '16:00' }]), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+		},
+	});
+	expect(await jobs.calendarRefresh.run()).toEqual({ outcome: 'ok', meta: { sessions: '1' } });
+	expect(sequence.some((entry) => entry.includes('/v2/calendar'))).toBe(true);
+	expect(stored).toEqual(['2026-08-20']);
+});
+
+test('calendar job records an Alpaca failure without inventing sessions', async () => {
+	const stored: unknown[] = [];
+	const jobs = createOrdinaryJobs({
+		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
+		writer: {
+			...writerWith([]),
+			appendMarketSessions: async (_id, sessions) => {
+				stored.push(...sessions);
+			},
+		},
+		alpaca: {
+			credentials: { key: 'k', secret: 's' },
+			fetchImpl: async () => new Response('no', { status: 403 }),
+		},
+	});
+	expect(await jobs.calendarRefresh.run()).toEqual({ outcome: 'failed', meta: { failure: 'alpaca-http', sessions: '0' } });
+	expect(stored).toHaveLength(0);
+});
