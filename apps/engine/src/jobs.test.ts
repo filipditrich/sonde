@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { FetchResult, PoliteFetcher } from '@sonde/probes';
 
-import { ingestEdgarPoll, ingestEdgarReconciliation, type EvidenceWriter } from './jobs';
+import { ingestEdgarPoll, ingestEdgarReconciliation, previousEasternDate, type EvidenceWriter } from './jobs';
 
 const listing = await Bun.file(new URL('../../../packages/probes/src/edgar/__fixtures__/index.json', import.meta.url)).text();
 const form = await Bun.file(new URL('../../../packages/probes/src/edgar/__fixtures__/form4-single-purchase.xml', import.meta.url)).text();
@@ -25,7 +25,7 @@ const singleEntryFeed = (directoryUrl: string) => `<?xml version="1.0"?><feed><e
 <updated>2026-08-20T12:00:00.000Z</updated><category term="4"/>
 </entry></feed>`;
 
-const writerWith = (sequence: string[]): EvidenceWriter => ({
+const writerWith = (sequence: string[], store: Record<string, object> = {}): EvidenceWriter => ({
 	persistFetch: async ({ resource, result }) => {
 		sequence.push(`attempt:${result.status}:${resource}`);
 		return { attemptId: crypto.randomUUID(), ...(result.status === 'ok' ? { documentSha256: 'a'.repeat(64) } : {}) };
@@ -34,6 +34,10 @@ const writerWith = (sequence: string[]): EvidenceWriter => ({
 		sequence.push('parse');
 		sequence.push(`facts:${facts[0]?.transactionCode}`);
 		return crypto.randomUUID();
+	},
+	loadCheckpoint: async (key) => store[key] as never,
+	saveCheckpoint: async (key, value) => {
+		store[key] = value;
 	},
 });
 
@@ -61,7 +65,7 @@ describe('EDGAR jobs', () => {
 		expect(attempts.filter((entry) => entry.includes('.xml'))).toHaveLength(1);
 		expect(sequence.indexOf('parse')).toBeGreaterThan(sequence.findIndex((entry) => entry.includes('.xml')));
 		expect(sequence).toContain('facts:S');
-		expect(result).toEqual({ documents: 1, facts: 1 });
+		expect(result).toEqual({ documents: 1, facts: 1, gapDetected: false });
 	});
 
 	test('persists unchanged and failed feed requests without documents', async () => {
@@ -101,4 +105,24 @@ describe('EDGAR jobs', () => {
 		expect(sequence.indexOf('parse')).toBeGreaterThan(sequence.findIndex((entry) => entry.includes('.xml')));
 		expect(result).toEqual({ documents: 1, facts: 1 });
 	});
+	test('live poll remembers seen accessions so a restart does not refetch XML', async () => {
+		const urls: string[] = [];
+		const directoryUrl = 'https://www.sec.gov/Archives/edgar/data/1739310/000173931026000004/';
+		const fetcher = {
+			get: async (url: string) => {
+				urls.push(url);
+				return ok(url.includes('getcurrent') ? singleEntryFeed(directoryUrl) : url.endsWith('index.json') ? listing : form);
+			},
+		} as unknown as PoliteFetcher;
+		const store: Record<string, object> = {};
+		const writer = writerWith([], store);
+		expect(await ingestEdgarPoll(fetcher, writer)).toMatchObject({ documents: 1 });
+		urls.length = 0;
+		expect(await ingestEdgarPoll(fetcher, writer)).toEqual({ documents: 0, facts: 0, gapDetected: false });
+		expect(urls.filter((url) => url.includes('.xml'))).toHaveLength(0);
+	});
+});
+
+test('previous Eastern date is the session before the current New York civil date', () => {
+	expect(previousEasternDate(new Date('2026-08-21T08:00:00.000Z'))).toBe('2026-08-20');
 });

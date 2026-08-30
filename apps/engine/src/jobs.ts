@@ -9,6 +9,18 @@ export type EvidenceWriter = {
 		failure?: { code: string; detail: string };
 		facts: ReturnType<typeof edgar.parseForm4Facts>['facts'];
 	}): Promise<string>;
+	loadCheckpoint<T>(key: string): Promise<T | undefined>;
+	saveCheckpoint(key: string, value: object): Promise<void>;
+};
+
+const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
+
+/** Civil date in America/New_York minus one day — the daily index that should already be complete. */
+export const previousEasternDate = (now: Date): string => {
+	const eastern = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+	const cursor = new Date(`${eastern}T12:00:00.000Z`);
+	cursor.setUTCDate(cursor.getUTCDate() - 1);
+	return cursor.toISOString().slice(0, 10);
 };
 
 type PersistedReceipt = { attemptId: string; documentSha256?: string };
@@ -55,10 +67,11 @@ export const ingestEdgarPoll = async (
 	fetcher: PoliteFetcher,
 	writer: EvidenceWriter,
 	now: () => Date = () => new Date(),
-): Promise<{ documents: number; facts: number }> => {
+): Promise<{ documents: number; facts: number; gapDetected: boolean }> => {
 	const receipts = new Map<string, { attemptId: string; documentSha256?: string }>();
 	const capture = persistCaptures(writer, receipts);
-	const poll = await edgar.pollOnce(fetcher, undefined, async ({ resource, result }) => capture(resource, result));
+	const prior = (await writer.loadCheckpoint<edgar.EdgarPollState>(EDGAR_LIVE_CHECKPOINT)) ?? edgar.emptyState();
+	const poll = await edgar.pollOnce(fetcher, prior, async ({ resource, result }) => capture(resource, result));
 	const facts = await parseCapturedDocuments(
 		poll.documents.map((document) => ({
 			url: document.url,
@@ -70,7 +83,8 @@ export const ingestEdgarPoll = async (
 		writer,
 		now,
 	);
-	return { documents: poll.documents.length, facts };
+	await writer.saveCheckpoint(EDGAR_LIVE_CHECKPOINT, poll.state);
+	return { documents: poll.documents.length, facts, gapDetected: poll.gapDetected };
 };
 
 /** Reconcile the SEC daily master index; it never substitutes the live feed. */
