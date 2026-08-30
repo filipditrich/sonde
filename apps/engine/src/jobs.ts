@@ -1,13 +1,20 @@
-import type { ArtifactId, MarketSession } from '@sonde/core';
+import type { ArtifactId, MarketSession, SipDailyBar } from '@sonde/core';
 import {
 	type AlpacaCredentials,
 	type AlpacaFetch,
 	type FetchResult,
+	type MarketSessionCandidate,
 	type PoliteFetcher,
 	edgar,
 	fetchAlpacaCalendar,
+	fetchSipDailyBars,
 	materializeMarketSessions,
+	materializeSipDailyBars,
+	selectCompletedSipBars,
 } from '@sonde/probes';
+
+import type { EngineJobs } from './composition';
+import type { Job } from './scheduler';
 
 export type EvidenceWriter = {
 	persistFetch(input: { source: string; resource: string; result: FetchResult }): Promise<{ attemptId: string; documentSha256?: string }>;
@@ -21,6 +28,9 @@ export type EvidenceWriter = {
 	loadCheckpoint<T>(key: string): Promise<T | undefined>;
 	saveCheckpoint(key: string, value: object): Promise<void>;
 	appendMarketSessions?(acquisitionAttemptId: string, sessions: readonly MarketSession[]): Promise<void>;
+	appendSipDailyBars?(acquisitionAttemptId: string, bars: readonly SipDailyBar[]): Promise<void>;
+	listListings?(): Promise<readonly { id: string; ticker: string }[]>;
+	listMarketSessions?(): Promise<readonly MarketSessionCandidate[]>;
 };
 
 const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
@@ -141,11 +151,80 @@ export const ingestAlpacaCalendar = async (
 	return { sessions: materialized.length };
 };
 
-const unconfigured = (name: string) => ({
+const persistListingBars = async (input: {
+	writer: EvidenceWriter;
+	listing: { id: string; ticker: string };
+	sessions: readonly MarketSessionCandidate[];
+	credentials: AlpacaCredentials;
+	fetchImpl?: AlpacaFetch;
+	now: () => Date;
+}): Promise<{ bars: number; failure?: string }> => {
+	const fetched = await fetchSipDailyBars({
+		listingId: input.listing.id as ArtifactId,
+		symbol: input.listing.ticker,
+		credentials: input.credentials,
+		fetchImpl: input.fetchImpl,
+		now: input.now,
+	});
+	const { attemptId } = await input.writer.persistFetch({ source: 'alpaca', resource: fetched.capture.resource, result: fetched.capture.result });
+	if (fetched.failure) return { bars: 0, failure: fetched.failure };
+	const selected = selectCompletedSipBars(fetched.bars, input.sessions, input.now());
+	if (selected.failure) return { bars: 0, failure: selected.failure };
+	if (!input.writer.appendSipDailyBars) return { bars: 0, failure: 'sip-writer-missing' };
+	const materialized = materializeSipDailyBars(selected.bars, attemptId as ArtifactId);
+	await input.writer.appendSipDailyBars(attemptId, materialized);
+	return { bars: materialized.length };
+};
+
+/** SIP bars only for known listings; missing universe is not-ready, never an IEX fallback. */
+export const ingestSipDailyBars = async (
+	writer: EvidenceWriter,
+	credentials: AlpacaCredentials,
+	options: { fetchImpl?: AlpacaFetch; now?: () => Date } = {},
+): Promise<{ bars: number; failure?: string }> => {
+	const listings = (await writer.listListings?.()) ?? [];
+	if (!listings.length) return { bars: 0, failure: 'no-listings' };
+	const sessions = (await writer.listMarketSessions?.()) ?? [];
+	let bars = 0;
+	let failure: string | undefined;
+	const now = options.now ?? (() => new Date());
+	for (const listing of listings) {
+		const result = await persistListingBars({ writer, listing, sessions, credentials, fetchImpl: options.fetchImpl, now });
+		bars += result.bars;
+		failure ??= result.failure;
+	}
+	return { bars, failure };
+};
+
+const unconfigured = (name: string): Job => ({
 	name,
-	lane: 'ordinary' as const,
+	lane: 'ordinary',
 	run: async () => {
 		throw new Error(`${name} adapter requires explicit runtime configuration`);
+	},
+});
+
+type AlpacaRuntime = { credentials: AlpacaCredentials; fetchImpl?: AlpacaFetch };
+
+const calendarJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => Date): Job => ({
+	name: 'calendar-refresh',
+	lane: 'ordinary',
+	run: async () => {
+		const result = await ingestAlpacaCalendar(writer, alpaca.credentials, { fetchImpl: alpaca.fetchImpl, now });
+		return {
+			outcome: result.failure ? 'failed' : 'ok',
+			meta: { sessions: String(result.sessions), ...(result.failure ? { failure: result.failure } : {}) },
+		};
+	},
+});
+
+const sipJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => Date): Job => ({
+	name: 'sip-daily-bars',
+	lane: 'ordinary',
+	run: async () => {
+		const result = await ingestSipDailyBars(writer, alpaca.credentials, { fetchImpl: alpaca.fetchImpl, now });
+		const outcome = result.failure === 'no-listings' ? 'not-ready' : result.failure ? 'failed' : 'ok';
+		return { outcome, meta: { bars: String(result.bars), ...(result.failure ? { failure: result.failure } : {}) } };
 	},
 });
 
@@ -154,9 +233,10 @@ export const createOrdinaryJobs = (input: {
 	fetcher: PoliteFetcher;
 	writer: EvidenceWriter;
 	now?: () => Date;
-	alpaca?: { credentials: AlpacaCredentials; fetchImpl?: AlpacaFetch };
-}): import('./composition').EngineJobs => {
+	alpaca?: AlpacaRuntime;
+}): EngineJobs => {
 	const now = input.now ?? (() => new Date());
+	const alpaca = input.alpaca;
 	return {
 		edgarLive: {
 			name: 'edgar-live',
@@ -178,18 +258,7 @@ export const createOrdinaryJobs = (input: {
 				return { outcome: 'ok', meta: { date, documents: String(result.documents), facts: String(result.facts) } };
 			},
 		},
-		calendarRefresh: input.alpaca
-			? {
-					name: 'calendar-refresh',
-					lane: 'ordinary',
-					run: async () => {
-						const result = await ingestAlpacaCalendar(input.writer, input.alpaca!.credentials, { fetchImpl: input.alpaca!.fetchImpl, now });
-						return result.failure
-							? { outcome: 'failed', meta: { failure: result.failure, sessions: String(result.sessions) } }
-							: { outcome: 'ok', meta: { sessions: String(result.sessions) } };
-					},
-				}
-			: unconfigured('calendar-refresh'),
-		sipDailyBars: unconfigured('sip-daily-bars'),
+		calendarRefresh: alpaca ? calendarJob(input.writer, alpaca, now) : unconfigured('calendar-refresh'),
+		sipDailyBars: alpaca ? sipJob(input.writer, alpaca, now) : unconfigured('sip-daily-bars'),
 	};
 };

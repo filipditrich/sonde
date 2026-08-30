@@ -189,3 +189,82 @@ test('calendar job records an Alpaca failure without inventing sessions', async 
 	expect(await jobs.calendarRefresh.run()).toEqual({ outcome: 'failed', meta: { failure: 'alpaca-http', sessions: '0' } });
 	expect(stored).toHaveLength(0);
 });
+
+test('SIP job stays not-ready when no listings exist and never calls Alpaca', async () => {
+	const urls: string[] = [];
+	const jobs = createOrdinaryJobs({
+		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
+		writer: { ...writerWith([]), listListings: async () => [] },
+		alpaca: {
+			credentials: { key: 'k', secret: 's' },
+			fetchImpl: async (url) => {
+				urls.push(url);
+				return new Response('[]', { status: 200 });
+			},
+		},
+	});
+	expect(await jobs.sipDailyBars.run()).toEqual({ outcome: 'not-ready', meta: { failure: 'no-listings', bars: '0' } });
+	expect(urls).toHaveLength(0);
+});
+
+test('SIP job persists twenty completed SIP bars for a known listing', async () => {
+	const dates = Array.from({ length: 20 }, (_, index) => `2026-07-${String(index + 1).padStart(2, '0')}`);
+	const listingId = '0199a1f0-0000-7000-8000-000000000001';
+	const stored: string[] = [];
+	const urls: string[] = [];
+	const jobs = createOrdinaryJobs({
+		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
+		writer: {
+			...writerWith([]),
+			listListings: async () => [{ id: listingId, ticker: 'ISS' }],
+			listMarketSessions: async () =>
+				dates.map((date) => ({
+					calendarVersion: 'alpaca-m0',
+					sessionDate: date,
+					opensAt: `${date}T09:30:00-04:00`,
+					closesAt: `${date}T16:00:00-04:00`,
+					earlyClose: false,
+					source: 'alpaca' as const,
+					observedAt: '2026-08-21T20:00:00.000Z',
+				})),
+			appendSipDailyBars: async (_id, bars) => {
+				stored.push(...bars.map((bar) => bar.sessionDate));
+			},
+		},
+		now: () => new Date('2026-08-21T20:00:00.000Z'),
+		alpaca: {
+			credentials: { key: 'k', secret: 's' },
+			fetchImpl: async (url) => {
+				urls.push(url);
+				return new Response(
+					JSON.stringify({
+						bars: dates.map((date) => ({ t: `${date}T04:00:00Z`, o: '1', h: '2', l: '1', c: '1.5', v: '100', vw: '1.4' })),
+					}),
+				);
+			},
+		},
+	});
+	expect(await jobs.sipDailyBars.run()).toEqual({ outcome: 'ok', meta: { bars: '20' } });
+	expect(urls.some((url) => url.includes('feed=sip') && !url.includes('iex'))).toBe(true);
+	expect(stored).toHaveLength(20);
+});
+
+test('SIP job records an Alpaca failure without inventing bars', async () => {
+	const stored: unknown[] = [];
+	const jobs = createOrdinaryJobs({
+		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
+		writer: {
+			...writerWith([]),
+			listListings: async () => [{ id: '0199a1f0-0000-7000-8000-000000000001', ticker: 'ISS' }],
+			appendSipDailyBars: async (_id, bars) => {
+				stored.push(...bars);
+			},
+		},
+		alpaca: {
+			credentials: { key: 'k', secret: 's' },
+			fetchImpl: async () => new Response('no', { status: 403 }),
+		},
+	});
+	expect(await jobs.sipDailyBars.run()).toEqual({ outcome: 'failed', meta: { failure: 'alpaca-http', bars: '0' } });
+	expect(stored).toHaveLength(0);
+});

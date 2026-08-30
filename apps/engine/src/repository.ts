@@ -3,6 +3,8 @@ import {
 	appendMarketSession,
 	appendSipDailyBar,
 	commitParse,
+	listActiveListings,
+	listMarketSessionCandidates,
 	persistAcquisition,
 	readRuntimeCheckpoint,
 	saveRuntimeCheckpoint,
@@ -77,4 +79,6 @@ export const createEvidenceWriter = (db: Database): EngineRepository => ({
 	saveCheckpoint: async (key, value) => {
 		await saveRuntimeCheckpoint(db, key, value);
 	},
+	listListings: () => listActiveListings(db),
+	listMarketSessions: () => listMarketSessionCandidates(db),
 });

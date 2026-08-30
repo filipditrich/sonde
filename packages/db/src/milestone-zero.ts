@@ -1,4 +1,4 @@
-import { desc, eq, gt, lte, sql } from 'drizzle-orm';
+import { desc, eq, gt, isNull, lte, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 
 import {
@@ -26,6 +26,7 @@ import {
 	cockpitEvents,
 	form4TransactionFacts,
 	jobRunEvents,
+	listings,
 	marketSessions,
 	parseRuns,
 	runtimeCheckpoints,
@@ -199,6 +200,24 @@ export const readRuntimeCheckpoint = async <T>(db: Database, key: string): Promi
 };
 export const saveRuntimeCheckpoint = async (db: Database, key: string, value: object, updatedAt = new Date()) =>
 	db.insert(runtimeCheckpoints).values({ key, value, updatedAt }).onConflictDoUpdate({ target: runtimeCheckpoints.key, set: { value, updatedAt } });
+
+export const listActiveListings = (db: Database) =>
+	db.select({ id: listings.id, ticker: listings.ticker }).from(listings).where(isNull(listings.effectiveTo));
+
+export const listMarketSessionCandidates = async (db: Database) => {
+	const rows = await db.select().from(marketSessions);
+	return rows
+		.filter((row) => row.source === 'alpaca')
+		.map((row) => ({
+			calendarVersion: row.calendarVersion,
+			sessionDate: row.sessionDate,
+			opensAt: row.opensAt.toISOString(),
+			closesAt: row.closesAt.toISOString(),
+			earlyClose: row.earlyClose,
+			source: 'alpaca' as const,
+			observedAt: row.observedAt.toISOString(),
+		}));
+};
 
 export const asOfForm4Facts = (db: Database, asOf: ObservedAt, limit = 100) =>
 	db
