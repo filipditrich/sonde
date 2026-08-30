@@ -227,65 +227,69 @@ export const asOfForm4Facts = (db: Database, asOf: ObservedAt, limit = 100) =>
 		.orderBy(desc(form4TransactionFacts.observedAt))
 		.limit(limit);
 
-export const readCockpitSnapshot = async (db: Database): Promise<CockpitSnapshot> => {
-	const [counts] = await db
-		.select({
-			documents: sql<number>`(select count(*) from ${sourceDocuments})`,
-			transactions: sql<number>`count(*)`,
-			qualifyingPurchases: sql<number>`count(*) filter (where ${form4TransactionFacts.transactionCode} = 'P' and ${form4TransactionFacts.acquiredDisposed} = 'A')`,
-		})
-		.from(form4TransactionFacts)
-		.leftJoin(sourceDocuments, eq(form4TransactionFacts.documentSha256, sourceDocuments.sha256));
-	const facts = await db.select().from(form4TransactionFacts).orderBy(desc(form4TransactionFacts.observedAt)).limit(20);
-	const events = await db.select().from(jobRunEvents).orderBy(desc(jobRunEvents.cursor)).limit(40);
+export const readFunnelAsOf = async (db: Database, asOf: Date) => {
+	const instant = asOf.toISOString();
+	const [row] = await db.execute<{ documents: number; transactions: number; qualifying_purchases: number }>(sql`
+		SELECT
+			(SELECT count(*)::int FROM m0_source_documents WHERE recorded_at <= ${instant}) AS documents,
+			(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${instant}) AS transactions,
+			(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${instant} AND transaction_code = 'P' AND acquired_disposed = 'A') AS qualifying_purchases
+	`);
+	return {
+		documents: Number(row?.documents ?? 0),
+		transactions: Number(row?.transactions ?? 0),
+		qualifyingPurchases: Number(row?.qualifying_purchases ?? 0),
+	};
+};
+
+const toForm4Fact = (fact: typeof form4TransactionFacts.$inferSelect): Form4TransactionFactType =>
+	Form4TransactionFact.parse({
+		id: fact.id,
+		kind: 'form4-transaction-fact',
+		schemaVersion: 'm0',
+		recordedAt: fact.recordedAt.toISOString(),
+		inputRefs: [{ kind: 'source-document', id: fact.documentSha256, role: 'parsed-document' }],
+		documentSha256: fact.documentSha256,
+		accession: fact.accession,
+		issuerCik: fact.issuerCik,
+		issuerName: fact.issuerName,
+		...(fact.issuerTicker ? { issuerTicker: fact.issuerTicker } : {}),
+		reportingOwnerCik: fact.reportingOwnerCik,
+		reportingOwnerName: fact.reportingOwnerName,
+		isDirector: fact.isDirector,
+		isOfficer: fact.isOfficer,
+		isTenPercentOwner: fact.isTenPercentOwner,
+		sourceClock: { kind: 'sec-acceptance', acceptedAt: fact.acceptedAt.toISOString() },
+		transactionDate: fact.transactionDate,
+		securityTitle: fact.securityTitle,
+		transactionCode: fact.transactionCode,
+		acquiredDisposed: fact.acquiredDisposed,
+		ownership: fact.ownership,
+		shares: fact.shares,
+		pricePerShare: fact.pricePerShare,
+		footnoteRefs: fact.footnoteRefs,
+		sourceLocator: fact.sourceLocator,
+		observedAt: fact.observedAt.toISOString(),
+	});
+
+const projectHealth = (events: (typeof jobRunEvents.$inferSelect)[]) => [
+	...new Map(
+		events
+			.toReversed()
+			.map((event) => [event.job, { job: event.job, lastEventAt: event.at.toISOString(), ...(event.outcome ? { outcome: event.outcome } : {}) }]),
+	).values(),
+];
+
+export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Promise<CockpitSnapshot> => {
+	const facts = await asOfForm4Facts(db, asOf.toISOString() as ObservedAt, 20);
+	const events = await db.select().from(jobRunEvents).where(lte(jobRunEvents.at, asOf)).orderBy(desc(jobRunEvents.cursor)).limit(40);
 	const cursorRows = await db.select({ cursor: sql<number>`coalesce(max(${cockpitEvents.cursor}), 0)` }).from(cockpitEvents);
-	const health = [
-		...new Map(
-			events
-				.reverse()
-				.map((event) => [event.job, { job: event.job, lastEventAt: event.at.toISOString(), ...(event.outcome ? { outcome: event.outcome } : {}) }]),
-		).values(),
-	];
-	const mappedFacts = facts.map((fact) =>
-		Form4TransactionFact.parse({
-			id: fact.id,
-			kind: 'form4-transaction-fact',
-			schemaVersion: 'm0',
-			recordedAt: fact.recordedAt.toISOString(),
-			inputRefs: [{ kind: 'source-document', id: fact.documentSha256, role: 'parsed-document' }],
-			documentSha256: fact.documentSha256,
-			accession: fact.accession,
-			issuerCik: fact.issuerCik,
-			issuerName: fact.issuerName,
-			...(fact.issuerTicker ? { issuerTicker: fact.issuerTicker } : {}),
-			reportingOwnerCik: fact.reportingOwnerCik,
-			reportingOwnerName: fact.reportingOwnerName,
-			isDirector: fact.isDirector,
-			isOfficer: fact.isOfficer,
-			isTenPercentOwner: fact.isTenPercentOwner,
-			sourceClock: { kind: 'sec-acceptance', acceptedAt: fact.acceptedAt.toISOString() },
-			transactionDate: fact.transactionDate,
-			securityTitle: fact.securityTitle,
-			transactionCode: fact.transactionCode,
-			acquiredDisposed: fact.acquiredDisposed,
-			ownership: fact.ownership,
-			shares: fact.shares,
-			pricePerShare: fact.pricePerShare,
-			footnoteRefs: fact.footnoteRefs,
-			sourceLocator: fact.sourceLocator,
-			observedAt: fact.observedAt.toISOString(),
-		}),
-	);
 	return CockpitSnapshot.parse({
-		cursor: cursorRows[0]?.cursor ?? 0,
-		asOf: new Date().toISOString() as CockpitSnapshotType['asOf'],
-		funnel: {
-			documents: Number(counts?.documents ?? 0),
-			transactions: Number(counts?.transactions ?? 0),
-			qualifyingPurchases: Number(counts?.qualifyingPurchases ?? 0),
-		},
-		facts: mappedFacts,
-		health,
+		cursor: Number(cursorRows[0]?.cursor ?? 0),
+		asOf: asOf.toISOString() as CockpitSnapshotType['asOf'],
+		funnel: await readFunnelAsOf(db, asOf),
+		facts: facts.map(toForm4Fact),
+		health: projectHealth(events),
 	});
 };
 

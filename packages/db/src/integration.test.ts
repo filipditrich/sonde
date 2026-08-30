@@ -3,7 +3,15 @@ import { sql } from 'drizzle-orm';
 
 import { AcquisitionAttempt, Form4TransactionFact, ParseRun, parseRunIdFrom, type ObservedAt } from '@sonde/core';
 
-import { asOfForm4Facts, commitParse, createDatabase, persistAcquisition, readCockpitEventsAfter, readSourceDocument } from './index';
+import {
+	asOfForm4Facts,
+	commitParse,
+	createDatabase,
+	persistAcquisition,
+	readCockpitEventsAfter,
+	readCockpitSnapshot,
+	readSourceDocument,
+} from './index';
 import { APPEND_ONLY_TABLES } from './schema';
 
 const url = process.env.DATABASE_URL;
@@ -153,6 +161,22 @@ suite('M0 PostgreSQL evidence contract', () => {
 				),
 			/check/i,
 		);
+	});
+	test('cockpit funnel counts match the as-of stored population', async () => {
+		expect((await readCockpitSnapshot(db, new Date(at))).funnel).toEqual({ documents: 1, transactions: 0, qualifyingPurchases: 0 });
+		const asOf = new Date(later);
+		const snapshot = await readCockpitSnapshot(db, asOf);
+		const [direct] = await db.execute<{ documents: number; transactions: number; qualifying_purchases: number }>(sql`
+			SELECT
+				(SELECT count(*)::int FROM m0_source_documents WHERE recorded_at <= ${later}) AS documents,
+				(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${later}) AS transactions,
+				(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${later} AND transaction_code = 'P' AND acquired_disposed = 'A') AS qualifying_purchases
+		`);
+		expect(snapshot.funnel).toEqual({
+			documents: Number(direct?.documents ?? 0),
+			transactions: Number(direct?.transactions ?? 0),
+			qualifyingPurchases: Number(direct?.qualifying_purchases ?? 0),
+		});
 	});
 	test('has strictly ordered resumable cockpit events', async () => {
 		const events = await readCockpitEventsAfter(db, 0);
