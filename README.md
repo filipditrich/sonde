@@ -112,9 +112,9 @@ model changes are evaluated only in sealed forward epochs. See
 
 ## Status
 
-Milestone 0 foundations exist in `packages/core`, `packages/db`, and `packages/probes`. Their current
-schemas predate the completed architecture review and are intentionally migration inputs rather than
-the target design.
+Milestone 0 now has a durable evidence spine, an ordinary-lane engine, and a loopback cockpit. The
+exit is still observational: a live filing cluster on screen, counts that match storage, and stale
+collection visibly different from a quiet source.
 
 | Milestone         | Goal                                         | State       |
 | ----------------- | -------------------------------------------- | ----------- |
@@ -137,10 +137,13 @@ cp .env.example .env
 docker compose up -d
 bun --cwd packages/db db:migrate
 bun gates
+bun --cwd apps/engine start
+bun --cwd apps/web start
 ```
 
-Milestone 0 needs Postgres, an SEC contact email, and Alpaca paper/data credentials. A model key is
-not required until Milestone 6.
+Open `http://127.0.0.1:3000/login`. Milestone 0 needs Postgres, `SONDE_CONTACT_EMAIL`,
+`SONDE_OPERATOR_TOKEN`, and Alpaca paper/data credentials for calendar and SIP. A model key is not
+required until Milestone 6. The cockpit may use `postgres://sonde_web:sonde_web@localhost:5432/sonde`.
 
 ## Documentation
 
