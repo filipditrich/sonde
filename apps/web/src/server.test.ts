@@ -42,6 +42,9 @@ describe('cockpit server', () => {
 		);
 		const chunk = await stream.body!.getReader().read();
 		controller.abort();
-		expect(new TextDecoder().decode(chunk.value)).toContain('id: 2');
+		const payload = new TextDecoder().decode(chunk.value);
+		expect(payload).toContain('id: 2');
+		expect(payload).toContain('data:');
+		expect(payload).not.toContain('event: artifact');
 	});
 });

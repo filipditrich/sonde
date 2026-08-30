@@ -27,7 +27,7 @@ const streamEvents = (request: Request, url: URL, reader: CockpitReader): Respon
 			const publish = async () => {
 				for (const event of await reader.eventsAfter(cursor)) {
 					cursor = event.cursor;
-					controller.enqueue(encoder.encode(`id: ${event.cursor}\nevent: artifact\ndata: ${JSON.stringify(event)}\n\n`));
+					controller.enqueue(encoder.encode(`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`));
 				}
 			};
 			void publish();
