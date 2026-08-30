@@ -30,6 +30,13 @@ export type FetchResult =
 			readonly failure: { readonly code: string; readonly detail: string };
 	  };
 
+/** failed attempts carry a code; 304 is recorded as not-modified rather than success */
+export const fetchFailureCode = (result: FetchResult): string | undefined => {
+	if (result.status === 'failed') return result.failure.code;
+	if (result.status === 'unchanged') return 'not-modified';
+	return undefined;
+};
+
 export type Clock = () => number;
 export type Sleep = (ms: number) => Promise<void>;
 export type FetchCapture = { resource: string; requestedAt: string; result: FetchResult };
