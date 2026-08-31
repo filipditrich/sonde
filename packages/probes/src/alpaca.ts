@@ -166,6 +166,10 @@ export const fetchSipDailyBars = async (input: {
 	url.searchParams.set('adjustment', 'raw');
 	url.searchParams.set('limit', '1000');
 	const now = input.now ?? (() => new Date());
+	const instant = now().getTime();
+	const day = 86_400_000;
+	url.searchParams.set('start', new Date(instant - 400 * day).toISOString().slice(0, 10));
+	url.searchParams.set('end', new Date(instant).toISOString().slice(0, 10));
 	const capture = await requestAlpaca(url.toString(), input.credentials, input.fetchImpl ?? globalThis.fetch, now);
 	if (capture.result.status !== 'ok') return { capture, bars: [], failure: fetchFailureCode(capture.result) ?? 'alpaca-unknown' };
 	let payload: { bars?: WireBar[] };
@@ -235,7 +239,12 @@ export const fetchAlpacaCalendar = async (input: {
 	calendarVersion: string;
 }): Promise<{ capture: AlpacaCapture; sessions: readonly MarketSessionCandidate[]; failure?: string }> => {
 	const now = input.now ?? (() => new Date());
-	const capture = await requestAlpaca(`${ALPACA_PAPER_URL}/v2/calendar`, input.credentials, input.fetchImpl ?? globalThis.fetch, now);
+	const instant = now().getTime();
+	const day = 86_400_000;
+	const calendar = new URL(`${ALPACA_PAPER_URL}/v2/calendar`);
+	calendar.searchParams.set('start', new Date(instant - 400 * day).toISOString().slice(0, 10));
+	calendar.searchParams.set('end', new Date(instant + 180 * day).toISOString().slice(0, 10));
+	const capture = await requestAlpaca(calendar.toString(), input.credentials, input.fetchImpl ?? globalThis.fetch, now);
 	if (capture.result.status !== 'ok') return { capture, sessions: [], failure: fetchFailureCode(capture.result) ?? 'alpaca-unknown' };
 	let rows: Array<{ date?: string; open?: string; close?: string }>;
 	try {

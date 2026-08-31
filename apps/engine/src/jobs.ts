@@ -193,7 +193,7 @@ export const ingestSipDailyBars = async (
 		bars += result.bars;
 		failure ??= result.failure;
 	}
-	return { bars, failure };
+	return bars > 0 ? { bars } : { bars, failure };
 };
 
 const unconfigured = (name: string): Job => ({

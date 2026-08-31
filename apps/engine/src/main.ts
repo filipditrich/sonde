@@ -21,3 +21,4 @@ const key = process.env.ALPACA_API_KEY_ID;
 const secret = process.env.ALPACA_API_SECRET_KEY;
 const alpaca = key && secret ? { credentials: { key, secret } } : undefined;
 startEngine(scheduler, createOrdinaryJobs({ fetcher, writer, ...(alpaca ? { alpaca } : {}) }));
+console.log(`engine ordinary lane started${alpaca ? ' with Alpaca paper calendar and SIP' : ' without Alpaca credentials'}`);

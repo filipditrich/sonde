@@ -15,8 +15,7 @@ export const startEngine = (
 	};
 	invoke(jobs.edgarLive);
 	invoke(jobs.edgarReconcile);
-	invoke(jobs.calendarRefresh);
-	invoke(jobs.sipDailyBars);
+	void scheduler.run(jobs.calendarRefresh).then(() => scheduler.run(jobs.sipDailyBars));
 	const handles = [
 		timers.setInterval(() => invoke(jobs.edgarLive), 5 * 60_000),
 		timers.setInterval(() => invoke(jobs.edgarReconcile), 24 * 60 * 60_000),
