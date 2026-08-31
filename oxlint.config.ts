@@ -113,6 +113,11 @@ export default defineConfig({
 			},
 		},
 		{
+			/** process entrypoints announce bind addresses to the operator */
+			files: ['apps/*/src/main.ts'],
+			rules: { 'no-console': 'off' },
+		},
+		{
 			/** tests exercise adversarial shapes; complexity caps get in the way there */
 			files: ['**/*.test.ts', '**/*.spec.ts'],
 			rules: {

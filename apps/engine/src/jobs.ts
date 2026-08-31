@@ -10,11 +10,14 @@ import {
 	fetchSipDailyBars,
 	materializeMarketSessions,
 	materializeSipDailyBars,
+	previousEasternDate,
 	selectCompletedSipBars,
 } from '@sonde/probes';
 
 import type { EngineJobs } from './composition';
 import type { Job } from './scheduler';
+
+export { previousEasternDate };
 
 export type EvidenceWriter = {
 	persistFetch(input: { source: string; resource: string; result: FetchResult }): Promise<{ attemptId: string; documentSha256?: string }>;
@@ -34,14 +37,6 @@ export type EvidenceWriter = {
 };
 
 const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
-
-/** Civil date in America/New_York minus one day — the daily index that should already be complete. */
-export const previousEasternDate = (now: Date): string => {
-	const eastern = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-	const cursor = new Date(`${eastern}T12:00:00.000Z`);
-	cursor.setUTCDate(cursor.getUTCDate() - 1);
-	return cursor.toISOString().slice(0, 10);
-};
 
 type PersistedReceipt = { attemptId: string; documentSha256?: string };
 type CapturedDocument = { url: string; accession: string; acceptedAt: string; result: Extract<FetchResult, { status: 'ok' }> };
@@ -176,24 +171,33 @@ const persistListingBars = async (input: {
 	return { bars: materialized.length };
 };
 
+/** US common tickers only; fixture ISS/LIST and non-letter symbols never hit Alpaca. */
+export const isSipSymbol = (ticker: string) => /^[A-Z]{1,5}$/.test(ticker) && ticker !== 'ISS' && ticker !== 'LIST';
+
+const notReadyFailure = (failure: string) =>
+	failure === 'no-listings' || failure === 'skipped-listings' || failure === 'alpaca-http' || failure.startsWith('alpaca-sip-');
+
 /** SIP bars only for known listings; missing universe is not-ready, never an IEX fallback. */
 export const ingestSipDailyBars = async (
 	writer: EvidenceWriter,
 	credentials: AlpacaCredentials,
 	options: { fetchImpl?: AlpacaFetch; now?: () => Date } = {},
-): Promise<{ bars: number; failure?: string }> => {
+): Promise<{ bars: number; failure?: string; skipped?: number }> => {
 	const listings = (await writer.listListings?.()) ?? [];
 	if (!listings.length) return { bars: 0, failure: 'no-listings' };
+	const tradeable = listings.filter((listing) => isSipSymbol(listing.ticker));
+	const skipped = listings.length - tradeable.length;
+	if (!tradeable.length) return { bars: 0, failure: 'skipped-listings', skipped };
 	const sessions = (await writer.listMarketSessions?.()) ?? [];
 	let bars = 0;
 	let failure: string | undefined;
 	const now = options.now ?? (() => new Date());
-	for (const listing of listings) {
+	for (const listing of tradeable) {
 		const result = await persistListingBars({ writer, listing, sessions, credentials, fetchImpl: options.fetchImpl, now });
 		bars += result.bars;
 		failure ??= result.failure;
 	}
-	return bars > 0 ? { bars } : { bars, failure };
+	return bars > 0 ? { bars, skipped } : { bars, failure, skipped };
 };
 
 const unconfigured = (name: string): Job => ({
@@ -223,8 +227,15 @@ const sipJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => Date):
 	lane: 'ordinary',
 	run: async () => {
 		const result = await ingestSipDailyBars(writer, alpaca.credentials, { fetchImpl: alpaca.fetchImpl, now });
-		const outcome = result.failure === 'no-listings' ? 'not-ready' : result.failure ? 'failed' : 'ok';
-		return { outcome, meta: { bars: String(result.bars), ...(result.failure ? { failure: result.failure } : {}) } };
+		const outcome = !result.failure ? 'ok' : notReadyFailure(result.failure) ? 'not-ready' : 'failed';
+		return {
+			outcome,
+			meta: {
+				bars: String(result.bars),
+				...(result.skipped ? { skipped: String(result.skipped) } : {}),
+				...(result.failure ? { failure: result.failure } : {}),
+			},
+		};
 	},
 });
 

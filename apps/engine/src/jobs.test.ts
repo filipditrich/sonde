@@ -207,6 +207,30 @@ test('SIP job stays not-ready when no listings exist and never calls Alpaca', as
 	expect(urls).toHaveLength(0);
 });
 
+test('SIP job skips fixture and non-US tickers without calling Alpaca', async () => {
+	const urls: string[] = [];
+	const jobs = createOrdinaryJobs({
+		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
+		writer: {
+			...writerWith([]),
+			listListings: async () => [
+				{ id: '0199a1f0-0000-7000-8000-000000000001', ticker: 'ISS' },
+				{ id: '0199a1f0-0000-7000-8000-000000000002', ticker: 'LIST' },
+				{ id: '0199a1f0-0000-7000-8000-000000000003', ticker: 'AXIA3' },
+			],
+		},
+		alpaca: {
+			credentials: { key: 'k', secret: 's' },
+			fetchImpl: async (url) => {
+				urls.push(url);
+				return new Response('[]', { status: 200 });
+			},
+		},
+	});
+	expect(await jobs.sipDailyBars.run()).toEqual({ outcome: 'not-ready', meta: { failure: 'skipped-listings', bars: '0', skipped: '3' } });
+	expect(urls).toHaveLength(0);
+});
+
 test('SIP job persists twenty completed SIP bars for a known listing', async () => {
 	const dates = Array.from({ length: 20 }, (_, index) => `2026-07-${String(index + 1).padStart(2, '0')}`);
 	const listingId = '0199a1f0-0000-7000-8000-000000000001';
@@ -216,7 +240,7 @@ test('SIP job persists twenty completed SIP bars for a known listing', async () 
 		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
 		writer: {
 			...writerWith([]),
-			listListings: async () => [{ id: listingId, ticker: 'ISS' }],
+			listListings: async () => [{ id: listingId, ticker: 'CAKE' }],
 			listMarketSessions: async () =>
 				dates.map((date) => ({
 					calendarVersion: 'alpaca-m0',
@@ -255,7 +279,7 @@ test('SIP job records an Alpaca failure without inventing bars', async () => {
 		fetcher: { get: async () => ok('') } as unknown as PoliteFetcher,
 		writer: {
 			...writerWith([]),
-			listListings: async () => [{ id: '0199a1f0-0000-7000-8000-000000000001', ticker: 'ISS' }],
+			listListings: async () => [{ id: '0199a1f0-0000-7000-8000-000000000001', ticker: 'CAKE' }],
 			appendSipDailyBars: async (_id, bars) => {
 				stored.push(...bars);
 			},
@@ -265,6 +289,6 @@ test('SIP job records an Alpaca failure without inventing bars', async () => {
 			fetchImpl: async () => new Response('no', { status: 403 }),
 		},
 	});
-	expect(await jobs.sipDailyBars.run()).toEqual({ outcome: 'failed', meta: { failure: 'alpaca-http', bars: '0' } });
+	expect(await jobs.sipDailyBars.run()).toEqual({ outcome: 'not-ready', meta: { failure: 'alpaca-http', bars: '0' } });
 	expect(stored).toHaveLength(0);
 });

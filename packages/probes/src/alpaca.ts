@@ -42,6 +42,14 @@ type WireBar = { t?: string; o?: string; h?: string; l?: string; c?: string; v?:
 const ALPACA_DATA_URL = 'https://data.alpaca.markets';
 const ALPACA_PAPER_URL = 'https://paper-api.alpaca.markets';
 
+/** Civil date in America/New_York minus one day — completed sessions only, never same-day SIP. */
+export const previousEasternDate = (now: Date): string => {
+	const eastern = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+	const cursor = new Date(`${eastern}T12:00:00.000Z`);
+	cursor.setUTCDate(cursor.getUTCDate() - 1);
+	return cursor.toISOString().slice(0, 10);
+};
+
 /** Quotes only known numeric market fields before JSON.parse so values never enter Number. */
 const parseLosslessBars = (body: string): { bars?: WireBar[] } =>
 	JSON.parse(body.replace(/("(?:o|h|l|c|v|vw)"\s*:\s*)(-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?=\s*[,}])/g, '$1"$2"')) as {
@@ -99,8 +107,18 @@ export const completedTwentyBarLiquidity = (bars: readonly Pick<SipDailyBarCandi
 	return { ready: true, medianDollarVolume: averageDecimals(dollars[9]!, dollars[10]!) };
 };
 
+export const ALPACA_MIN_INTERVAL_MS = 200;
+let lastAlpacaRequestAt = 0;
+
+const paceAlpaca = async () => {
+	const wait = lastAlpacaRequestAt + ALPACA_MIN_INTERVAL_MS - Date.now();
+	if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+	lastAlpacaRequestAt = Date.now();
+};
+
 const headers = (credentials: AlpacaCredentials) => ({ 'APCA-API-KEY-ID': credentials.key, 'APCA-API-SECRET-KEY': credentials.secret });
 const requestAlpaca = async (resource: string, credentials: AlpacaCredentials, fetchImpl: AlpacaFetch, now: () => Date): Promise<AlpacaCapture> => {
+	await paceAlpaca();
 	const requestedAt = now().toISOString();
 	try {
 		const response = await fetchImpl(resource, { headers: headers(credentials) });
@@ -169,7 +187,8 @@ export const fetchSipDailyBars = async (input: {
 	const instant = now().getTime();
 	const day = 86_400_000;
 	url.searchParams.set('start', new Date(instant - 400 * day).toISOString().slice(0, 10));
-	url.searchParams.set('end', new Date(instant).toISOString().slice(0, 10));
+	/** paper SIP 403s same-day bars; ask only through the last completed Eastern date */
+	url.searchParams.set('end', previousEasternDate(now()));
 	const capture = await requestAlpaca(url.toString(), input.credentials, input.fetchImpl ?? globalThis.fetch, now);
 	if (capture.result.status !== 'ok') return { capture, bars: [], failure: fetchFailureCode(capture.result) ?? 'alpaca-unknown' };
 	let payload: { bars?: WireBar[] };
@@ -203,13 +222,22 @@ export const fetchSipDailyBars = async (input: {
 	return bars.length === (payload.bars?.length ?? 0) ? { capture, bars } : { capture, bars, failure: 'alpaca-sip-invalid-bars' };
 };
 
+/** Keep the newest captured calendar version so a fixture or stale version cannot invent sessions. */
+export const activeCalendarSessions = <T extends { calendarVersion: string; observedAt: string }>(sessions: readonly T[]): T[] => {
+	const latest = sessions.reduce<T | undefined>((current, session) => {
+		if (!current) return session;
+		return session.observedAt >= current.observedAt ? session : current;
+	}, undefined);
+	return latest ? sessions.filter((session) => session.calendarVersion === latest.calendarVersion) : [];
+};
+
 /** Returns the latest exactly-twenty completed sessions, rejecting gaps and the still-open session. */
 export const selectCompletedSipBars = (
 	bars: readonly SipDailyBarCandidate[],
 	sessions: readonly MarketSessionCandidate[],
 	now: Date,
 ): { bars: readonly SipDailyBarCandidate[]; failure?: string } => {
-	const completed = sessions
+	const completed = activeCalendarSessions(sessions)
 		.filter((session) => new Date(session.closesAt) <= now)
 		.sort((left, right) => left.sessionDate.localeCompare(right.sessionDate));
 	if (completed.length < 20) return { bars: [], failure: 'alpaca-sip-fewer-than-twenty-completed-sessions' };
