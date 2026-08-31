@@ -1,8 +1,30 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import type { CockpitSnapshot, CockpitStreamEvent } from '@sonde/core';
+import type {
+	CockpitCandidateDetail,
+	CockpitEligibilityDetail,
+	CockpitFunnelPopulation,
+	CockpitFunnelStage,
+	CockpitPacketDetail,
+	CockpitSignalDetail,
+	CockpitSnapshot,
+	CockpitStreamEvent,
+} from '@sonde/core';
 
-export type CockpitReader = { snapshot(): Promise<CockpitSnapshot>; eventsAfter(cursor: number): Promise<CockpitStreamEvent[]> };
+import { parseCockpitPath } from './paths';
+import { homePage, loginPage, page, viewFragment } from './view';
+import { candidatePage, eligibilityPage, funnelPage, packetPage, signalPage } from './view-detail';
+
+export type CockpitReader = {
+	snapshot(): Promise<CockpitSnapshot>;
+	eventsAfter(cursor: number): Promise<CockpitStreamEvent[]>;
+	candidate(id: string): Promise<CockpitCandidateDetail | undefined>;
+	signal(id: string): Promise<CockpitSignalDetail | undefined>;
+	eligibility(id: string): Promise<CockpitEligibilityDetail | undefined>;
+	packet(id: string): Promise<CockpitPacketDetail | undefined>;
+	funnelStage(stage: CockpitFunnelStage): Promise<CockpitFunnelPopulation | undefined>;
+};
+
 const sessionCookie = 'sonde_operator_session';
 const encoder = new TextEncoder();
 const parseCookies = (header: string | null): Record<string, string> =>
@@ -14,49 +36,9 @@ const parseCookies = (header: string | null): Record<string, string> =>
 	);
 const hash = async (value: string) => Buffer.from(await crypto.subtle.digest('SHA-256', encoder.encode(value))).toString('hex');
 const equalHash = (left: string, right: string) => timingSafeEqual(Buffer.from(left), Buffer.from(right));
-const escapeHtml = (value: string) =>
-	value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
-const factItems = (facts: CockpitSnapshot['facts']) => {
-	if (!facts.length) return '<li>No retained facts</li>';
-	const groups = new Map<string, CockpitSnapshot['facts']>();
-	for (const fact of facts) {
-		const group = groups.get(fact.issuerCik) ?? [];
-		groups.set(fact.issuerCik, [...group, fact]);
-	}
-	return [...groups.values()]
-		.map((group) => {
-			const head = group[0];
-			if (!head) return '';
-			const rows = group.map((fact) => `${escapeHtml(fact.transactionCode)} ${fact.shares} @ ${fact.pricePerShare}`).join('; ');
-			return `<li>${escapeHtml(head.issuerName)} cluster ${group.length}: ${rows}</li>`;
-		})
-		.join('');
-};
-const healthItems = (health: CockpitSnapshot['health']) =>
-	health
-		.map(
-			(item) =>
-				`<li>${escapeHtml(item.job)}: ${escapeHtml(item.freshness)}${item.freshness === 'unseen' ? '' : ` (${escapeHtml(item.outcome ?? item.job)}) at ${item.lastEventAt}`}</li>`,
-		)
-		.join('');
-const tapeItems = (tape: CockpitSnapshot['tape'] = []) => {
-	if (!tape.length) return '<li>No decisions yet</li>';
-	return tape
-		.map((item) => {
-			const causes = (item.causes ?? [])
-				.map(
-					(cause) =>
-						`<li>${escapeHtml(cause.reportingOwnerName)} ${escapeHtml(cause.transactionCode)} ${escapeHtml(cause.shares)} @ ${escapeHtml(cause.pricePerShare)}</li>`,
-				)
-				.join('');
-			return `<li><details><summary>${escapeHtml(item.kind)} ${escapeHtml(item.summary)} at ${item.recordedAt}</summary>${causes ? `<ul>${causes}</ul>` : '<p>No causing filings on this row</p>'}</details></li>`;
-		})
-		.join('');
-};
-const html = (snapshot: CockpitSnapshot) =>
-	`<main><h1>Sonde cockpit</h1><section><h2>State and freshness</h2><p>as of ${snapshot.asOf}; cursor ${snapshot.cursor}</p></section><section><h2>Candidate funnel</h2><p>documents ${snapshot.funnel.documents}; transactions ${snapshot.funnel.transactions}; qualifying purchases ${snapshot.funnel.qualifyingPurchases}</p></section><section><h2>Decision tape</h2><ul>${tapeItems(snapshot.tape)}</ul></section><section><h2>Recent Source Facts</h2><ul>${factItems(snapshot.facts)}</ul></section><section><h2>Source and market-data health</h2><ul>${healthItems(snapshot.health)}</ul></section><section>Later milestones: not built</section><script>const refresh=()=>fetch('/api/snapshot').then(r=>r.json()).then(()=>location.reload());const e=new EventSource('/api/events');e.onmessage=refresh;e.onerror=refresh;</script></main>`;
-const login =
-	'<form method="post" action="/session"><label>Operator token <input name="token" type="password" autofocus></label><button>Open cockpit</button></form>';
+const html = (body: string) => new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+const notFound = () => new Response('not found', { status: 404 });
+
 const streamEvents = (request: Request, url: URL, reader: CockpitReader): Response => {
 	let cursor = Number(request.headers.get('last-event-id') ?? url.searchParams.get('cursor') ?? 0) || 0;
 	const stream = new ReadableStream({
@@ -78,6 +60,37 @@ const streamEvents = (request: Request, url: URL, reader: CockpitReader): Respon
 	return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } });
 };
 
+const detailPage = async (reader: CockpitReader, kind: 'candidates' | 'signals' | 'eligibility' | 'packets', id: string) => {
+	if (kind === 'candidates') {
+		const detail = await reader.candidate(id);
+		return detail ? html(page(candidatePage(detail))) : notFound();
+	}
+	if (kind === 'signals') {
+		const detail = await reader.signal(id);
+		return detail ? html(page(signalPage(detail))) : notFound();
+	}
+	if (kind === 'eligibility') {
+		const detail = await reader.eligibility(id);
+		return detail ? html(page(eligibilityPage(detail))) : notFound();
+	}
+	const detail = await reader.packet(id);
+	return detail ? html(page(packetPage(detail))) : notFound();
+};
+
+const read = async (request: Request, url: URL, reader: CockpitReader): Promise<Response> => {
+	const path = parseCockpitPath(url.pathname);
+	if (path.kind === 'snapshot') return Response.json(await reader.snapshot());
+	if (path.kind === 'events') return streamEvents(request, url, reader);
+	if (path.kind === 'view') return html(viewFragment(await reader.snapshot()));
+	if (path.kind === 'home') return html(homePage(await reader.snapshot()));
+	if (path.kind === 'funnel') {
+		const population = await reader.funnelStage(path.stage);
+		return population ? html(page(funnelPage(population))) : notFound();
+	}
+	if (path.kind === 'unknown') return notFound();
+	return detailPage(reader, path.kind, path.id);
+};
+
 export const createCockpitServer = (reader: CockpitReader, token: string) => {
 	if (token.length < 16) throw new Error('SONDE_OPERATOR_TOKEN must be at least 16 characters');
 	const tokenHash = hash(token);
@@ -91,18 +104,10 @@ export const createCockpitServer = (reader: CockpitReader, token: string) => {
 		sessions.add(await hash(value));
 		return value;
 	};
-	const read = async (request: Request, url: URL): Promise<Response> => {
-		if (!(await authorized(request))) return new Response('unauthorized', { status: 401 });
-		if (url.pathname === '/api/snapshot') return Response.json(await reader.snapshot());
-		if (url.pathname === '/api/events') return streamEvents(request, url, reader);
-		if (url.pathname === '/') return new Response(html(await reader.snapshot()), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-		return new Response('not found', { status: 404 });
-	};
 	return {
 		fetch: async (request: Request): Promise<Response> => {
 			const url = new URL(request.url);
-			if (url.pathname === '/login' && request.method === 'GET')
-				return new Response(login, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+			if (url.pathname === '/login' && request.method === 'GET') return html(loginPage);
 			if (url.pathname === '/session' && request.method === 'POST') {
 				const supplied = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? (await request.formData()).get('token');
 				if (typeof supplied !== 'string' || !equalHash(await hash(supplied), await tokenHash)) return new Response('unauthorized', { status: 401 });
@@ -112,8 +117,9 @@ export const createCockpitServer = (reader: CockpitReader, token: string) => {
 					headers: { Location: '/', 'Set-Cookie': `${sessionCookie}=${session}; HttpOnly; SameSite=Strict; Path=/` },
 				});
 			}
-			if (request.method !== 'GET') return new Response('not found', { status: 404 });
-			return read(request, url);
+			if (request.method !== 'GET') return notFound();
+			if (!(await authorized(request))) return new Response('unauthorized', { status: 401 });
+			return read(request, url, reader);
 		},
 	};
 };

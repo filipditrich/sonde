@@ -249,6 +249,29 @@ export const JobRunEvent = envelope('job-run-event', true).extend({
 });
 export type JobRunEvent = z.infer<typeof JobRunEvent>;
 
+export const CockpitPrerequisite = z.object({
+	name: z.string().min(1),
+	ready: z.boolean(),
+	detail: z.string().min(1),
+});
+export type CockpitPrerequisite = z.infer<typeof CockpitPrerequisite>;
+
+export const CockpitNextAction = z.discriminatedUnion('kind', [
+	z.object({
+		kind: z.literal('decision-cutoff'),
+		sessionDate: z.iso.date(),
+		deadline: Instant,
+		calendarVersion: z.string().min(1),
+		decisionWindowOpen: Instant,
+		prerequisites: z.array(CockpitPrerequisite),
+	}),
+	z.object({
+		kind: z.literal('unavailable'),
+		reason: z.string().min(1),
+	}),
+]);
+export type CockpitNextAction = z.infer<typeof CockpitNextAction>;
+
 export const CockpitSnapshot = z.object({
 	cursor: z.number().int().nonnegative(),
 	asOf: RecordedAt,
@@ -256,7 +279,10 @@ export const CockpitSnapshot = z.object({
 		documents: z.number().int().nonnegative(),
 		transactions: z.number().int().nonnegative(),
 		qualifyingPurchases: z.number().int().nonnegative(),
+		distinctOwnerCandidates: z.number().int().nonnegative(),
+		liquidSignals: z.number().int().nonnegative(),
 	}),
+	nextAction: CockpitNextAction,
 	facts: z.array(Form4TransactionFact),
 	health: z.array(
 		z.object({

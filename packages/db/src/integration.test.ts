@@ -195,19 +195,40 @@ suite('M0 PostgreSQL evidence contract', () => {
 		);
 	});
 	test('cockpit funnel counts match the as-of stored population', async () => {
-		expect((await readCockpitSnapshot(db, new Date(at))).funnel).toEqual({ documents: 1, transactions: 0, qualifyingPurchases: 0 });
+		expect((await readCockpitSnapshot(db, new Date(at))).funnel).toEqual({
+			documents: 1,
+			transactions: 0,
+			qualifyingPurchases: 0,
+			distinctOwnerCandidates: 0,
+			liquidSignals: 1,
+		});
 		const asOf = new Date(later);
 		const snapshot = await readCockpitSnapshot(db, asOf);
-		const [direct] = await db.execute<{ documents: number; transactions: number; qualifying_purchases: number }>(sql`
+		const [direct] = await db.execute<{
+			documents: number;
+			transactions: number;
+			qualifying_purchases: number;
+			distinct_owner_candidates: number;
+			liquid_signals: number;
+		}>(sql`
 			SELECT
 				(SELECT count(*)::int FROM m0_source_documents WHERE recorded_at <= ${later}) AS documents,
 				(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${later}) AS transactions,
-				(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${later} AND transaction_code = 'P' AND acquired_disposed = 'A') AS qualifying_purchases
+				(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${later} AND transaction_code = 'P' AND acquired_disposed = 'A' AND shares::numeric > 0 AND price_per_share::numeric > 0) AS qualifying_purchases,
+				(SELECT count(*)::int FROM (
+					SELECT DISTINCT ON (issuer_cik, decision_window_open) cardinality(reporting_owner_ciks) AS owners
+					FROM m1_candidate_snapshots
+					WHERE recorded_at <= ${later} AND strategy_version = 'strategy-v1'
+					ORDER BY issuer_cik, decision_window_open, cardinality(qualifying_fact_ids) DESC, recorded_at DESC
+				) latest WHERE owners >= 2) AS distinct_owner_candidates,
+				(SELECT count(*)::int FROM m1_signals WHERE recorded_at <= ${later}) AS liquid_signals
 		`);
 		expect(snapshot.funnel).toEqual({
 			documents: Number(direct?.documents ?? 0),
 			transactions: Number(direct?.transactions ?? 0),
 			qualifyingPurchases: Number(direct?.qualifying_purchases ?? 0),
+			distinctOwnerCandidates: Number(direct?.distinct_owner_candidates ?? 0),
+			liquidSignals: Number(direct?.liquid_signals ?? 0),
 		});
 	});
 	test('has strictly ordered resumable cockpit events', async () => {

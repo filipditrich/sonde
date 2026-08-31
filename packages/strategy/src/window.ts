@@ -1,15 +1,7 @@
+import { decisionCutoffAt } from '@sonde/core';
 import { activeCalendarSessions, type MarketSessionCandidate } from '@sonde/probes';
 
-const easternOffset = (date: string): string => {
-	const [year, month, day] = date.split('-').map(Number);
-	const zone = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'longOffset' })
-		.formatToParts(new Date(Date.UTC(year!, month! - 1, day!, 12)))
-		.find((part) => part.type === 'timeZoneName')?.value;
-	return zone?.replace('GMT', '') ?? '+00:00';
-};
-
-/** 09:20:00.000 ET on the session's civil date — inclusive of the cutoff instant. */
-export const decisionCutoffAt = (sessionDate: string) => `${sessionDate}T09:20:00.000${easternOffset(sessionDate)}`;
+export { decisionCutoffAt };
 
 export type DecisionWindow = {
 	readonly sessionDate: string;

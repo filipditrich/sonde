@@ -5,6 +5,7 @@ import {
 	CockpitSnapshot,
 	CockpitStreamEvent,
 	Form4TransactionFact,
+	STRATEGY_VERSION,
 	type AcquisitionAttempt,
 	type CockpitSnapshot as CockpitSnapshotType,
 	type CockpitStreamEvent as CockpitStreamEventType,
@@ -13,6 +14,7 @@ import {
 	type ObservedAt,
 	type ParseRun,
 	artifactIdFrom,
+	upcomingCutoff,
 } from '@sonde/core';
 
 const digestSha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -25,6 +27,7 @@ const assertDocumentHash = (bytes: Uint8Array, sha256: string) => {
 import type { Database } from './client';
 import { freshnessOf, ORDINARY_JOBS } from './cockpit-health';
 import { readDecisionTape } from './milestone-one';
+import { cockpitNextAction } from './next-action';
 import {
 	acquisitionAttempts,
 	cockpitEvents,
@@ -307,17 +310,69 @@ export const lastFinishedJobOutcome = async (db: Database, job: string) => {
 
 export const readFunnelAsOf = async (db: Database, asOf: Date) => {
 	const instant = asOf.toISOString();
-	const [row] = await db.execute<{ documents: number; transactions: number; qualifying_purchases: number }>(sql`
+	const [row] = await db.execute<{
+		documents: number;
+		transactions: number;
+		qualifying_purchases: number;
+		distinct_owner_candidates: number;
+		liquid_signals: number;
+	}>(sql`
 		SELECT
 			(SELECT count(*)::int FROM m0_source_documents WHERE recorded_at <= ${instant}) AS documents,
 			(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${instant}) AS transactions,
-			(SELECT count(*)::int FROM m0_form4_transaction_facts WHERE observed_at <= ${instant} AND transaction_code = 'P' AND acquired_disposed = 'A') AS qualifying_purchases
+			(SELECT count(*)::int FROM m0_form4_transaction_facts
+				WHERE observed_at <= ${instant} AND transaction_code = 'P' AND acquired_disposed = 'A'
+				AND shares::numeric > 0 AND price_per_share::numeric > 0) AS qualifying_purchases,
+			(SELECT count(*)::int FROM (
+				SELECT DISTINCT ON (issuer_cik, decision_window_open) cardinality(reporting_owner_ciks) AS owners
+				FROM m1_candidate_snapshots
+				WHERE recorded_at <= ${instant} AND strategy_version = ${STRATEGY_VERSION}
+				ORDER BY issuer_cik, decision_window_open, cardinality(qualifying_fact_ids) DESC, recorded_at DESC
+			) latest WHERE owners >= 2) AS distinct_owner_candidates,
+			(SELECT count(*)::int FROM m1_signals WHERE recorded_at <= ${instant}) AS liquid_signals
 	`);
 	return {
 		documents: Number(row?.documents ?? 0),
 		transactions: Number(row?.transactions ?? 0),
 		qualifyingPurchases: Number(row?.qualifying_purchases ?? 0),
+		distinctOwnerCandidates: Number(row?.distinct_owner_candidates ?? 0),
+		liquidSignals: Number(row?.liquid_signals ?? 0),
 	};
+};
+
+const dueCutoff = async (db: Database, asOf: Date) => {
+	const [row] = await db.execute<{ session_date: string; calendar_version: string; opens_at: Date; cutoff_at: Date }>(sql`
+		SELECT session.session_date, session.calendar_version, snapshot.decision_window_open AS opens_at, snapshot.cutoff_at
+		FROM m1_candidate_snapshots snapshot
+		JOIN m0_market_sessions session
+			ON session.opens_at = snapshot.decision_window_open AND session.source = 'alpaca'
+		WHERE snapshot.strategy_version = ${STRATEGY_VERSION}
+		  AND snapshot.cutoff_at <= ${asOf.toISOString()}
+		  AND NOT EXISTS (
+			SELECT 1 FROM m1_eligibility_decisions decision
+			WHERE decision.strategy_version = snapshot.strategy_version
+			  AND decision.issuer_cik = snapshot.issuer_cik
+			  AND decision.decision_window_open = snapshot.decision_window_open
+		  )
+		ORDER BY snapshot.cutoff_at ASC
+		LIMIT 1
+	`);
+	if (!row) return undefined;
+	return {
+		sessionDate: row.session_date,
+		calendarVersion: row.calendar_version,
+		decisionWindowOpen: new Date(row.opens_at).toISOString(),
+		deadline: new Date(row.cutoff_at).toISOString(),
+	};
+};
+
+export const readNextAction = async (db: Database, asOf: Date) => {
+	const due = await dueCutoff(db, asOf);
+	const sessions = await listMarketSessionCandidates(db);
+	return cockpitNextAction(due ?? upcomingCutoff(sessions, asOf.getTime()), {
+		calendar: await lastFinishedJobOutcome(db, 'calendar-refresh'),
+		sip: await lastFinishedJobOutcome(db, 'sip-daily-bars'),
+	});
 };
 
 const toForm4Fact = (fact: typeof form4TransactionFacts.$inferSelect): Form4TransactionFactType =>
@@ -379,6 +434,7 @@ export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Prom
 		cursor: Number(cursorRows[0]?.cursor ?? 0),
 		asOf: asOf.toISOString() as CockpitSnapshotType['asOf'],
 		funnel: await readFunnelAsOf(db, asOf),
+		nextAction: await readNextAction(db, asOf),
 		facts: facts.map(toForm4Fact),
 		health: projectHealth([...events], asOf),
 		tape: await readDecisionTape(db, asOf),
