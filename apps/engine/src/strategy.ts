@@ -1,6 +1,6 @@
 import type { CandidateSnapshot } from '@sonde/core';
 import type { MarketSessionCandidate, SipDailyBarCandidate } from '@sonde/probes';
-import { closeCandidate, snapshotsFromFacts, type CutoffListing, type StrategyFact } from '@sonde/strategy';
+import { closeCandidate, selectCutoffSnapshots, snapshotsFromFacts, snapshotWindowKey, type CutoffListing, type StrategyFact } from '@sonde/strategy';
 
 export type StrategyWriter = {
 	listStrategyFacts(): Promise<readonly StrategyFact[]>;
@@ -35,13 +35,12 @@ export const closeDueCandidates = async (writer: StrategyWriter, now: Date) => {
 	]);
 	let signals = 0;
 	let decisions = 0;
-	for (const snapshot of snapshots) {
-		const key = `${snapshot.issuerCik}:${new Date(snapshot.decisionWindowOpen).toISOString()}`;
+	for (const snapshot of selectCutoffSnapshots(snapshots)) {
+		const key = snapshotWindowKey(snapshot);
 		if (keys.has(key) || Date.parse(snapshot.cutoffAt) > now.getTime()) continue;
 		const listing = listingFor(listings, snapshot.issuerCik);
 		const bars = listing ? await writer.listSipBars(listing.id) : [];
-		const owned = facts.filter((fact) => snapshot.qualifyingFactIds.includes(fact.id as never));
-		const result = closeCandidate({ snapshot, facts: owned, listing, sessions, bars, alreadyDecided: false, now, recordedAt });
+		const result = closeCandidate({ snapshot, facts, listing, sessions, bars, alreadyDecided: false, now, recordedAt });
 		await writer.persistCutoff(result);
 		decisions += 1;
 		if (result.signal) signals += 1;

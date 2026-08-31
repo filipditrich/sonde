@@ -265,6 +265,16 @@ export const asOfForm4Facts = (db: Database, asOf: ObservedAt, limit = 100) =>
 		.orderBy(desc(form4TransactionFacts.observedAt))
 		.limit(limit);
 
+export const lastFinishedJobOutcome = async (db: Database, job: string) => {
+	const [row] = await db.execute<{ outcome: string | null }>(sql`
+		SELECT outcome FROM m0_job_run_events
+		WHERE job = ${job} AND event = 'finished'
+		ORDER BY cursor DESC
+		LIMIT 1
+	`);
+	return row?.outcome ?? undefined;
+};
+
 export const readFunnelAsOf = async (db: Database, asOf: Date) => {
 	const instant = asOf.toISOString();
 	const [row] = await db.execute<{ documents: number; transactions: number; qualifying_purchases: number }>(sql`
@@ -316,25 +326,31 @@ const projectHealth = (events: (typeof jobRunEvents.$inferSelect)[], asOf: Date)
 		const event = latest.get(job);
 		if (!event) return { job, lastEventAt: asOf.toISOString(), freshness: 'unseen' as const };
 		const meta = event.meta && typeof event.meta === 'object' && !Array.isArray(event.meta) ? (event.meta as Record<string, string>) : {};
+		const lastEventAt = new Date(event.at).toISOString();
 		return {
 			job,
-			lastEventAt: event.at.toISOString(),
+			lastEventAt,
 			...(event.outcome ? { outcome: event.outcome } : {}),
-			freshness: freshnessOf({ job, lastEventAt: event.at.toISOString(), event: event.event, outcome: event.outcome ?? undefined, meta, asOf }),
+			freshness: freshnessOf({ job, lastEventAt, event: event.event, outcome: event.outcome ?? undefined, meta, asOf }),
 		};
 	});
 };
 
 export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Promise<CockpitSnapshot> => {
 	const facts = await asOfForm4Facts(db, asOf.toISOString() as ObservedAt, 20);
-	const events = await db.select().from(jobRunEvents).where(lte(jobRunEvents.at, asOf)).orderBy(desc(jobRunEvents.cursor)).limit(40);
+	const events = await db.execute<typeof jobRunEvents.$inferSelect>(sql`
+		SELECT DISTINCT ON (job) cursor, id, schema_version, run_id, job, lane, event, at, outcome, meta, recorded_at
+		FROM m0_job_run_events
+		WHERE at <= ${asOf.toISOString()}::timestamptz
+		ORDER BY job, cursor DESC
+	`);
 	const cursorRows = await db.select({ cursor: sql<number>`coalesce(max(${cockpitEvents.cursor}), 0)` }).from(cockpitEvents);
 	return CockpitSnapshot.parse({
 		cursor: Number(cursorRows[0]?.cursor ?? 0),
 		asOf: asOf.toISOString() as CockpitSnapshotType['asOf'],
 		funnel: await readFunnelAsOf(db, asOf),
 		facts: facts.map(toForm4Fact),
-		health: projectHealth(events, asOf),
+		health: projectHealth([...events], asOf),
 		tape: await readDecisionTape(db, asOf),
 	});
 };

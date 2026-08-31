@@ -76,4 +76,24 @@ export const snapshotsFromFacts = (facts: readonly StrategyFact[], sessions: rea
 export const snapshotKey = (snapshot: Pick<CandidateSnapshot, 'strategyVersion' | 'issuerCik' | 'decisionWindowOpen'>) =>
 	`${snapshot.strategyVersion}:${snapshot.issuerCik}:${snapshot.decisionWindowOpen}`;
 
+export const snapshotWindowKey = (snapshot: Pick<CandidateSnapshot, 'issuerCik' | 'decisionWindowOpen'>) =>
+	`${snapshot.issuerCik}:${new Date(snapshot.decisionWindowOpen).toISOString()}`;
+
+const isRicherSnapshot = (candidate: CandidateSnapshot, incumbent: CandidateSnapshot) => {
+	if (candidate.qualifyingFactIds.length !== incumbent.qualifyingFactIds.length)
+		return candidate.qualifyingFactIds.length > incumbent.qualifyingFactIds.length;
+	return Date.parse(candidate.recordedAt) >= Date.parse(incumbent.recordedAt);
+};
+
+/** The cutoff candidate is the richest snapshot for each issuer and Decision Window. */
+export const selectCutoffSnapshots = (snapshots: readonly CandidateSnapshot[]) => {
+	const latest = new Map<string, CandidateSnapshot>();
+	for (const snapshot of snapshots) {
+		const key = snapshotWindowKey(snapshot);
+		const prev = latest.get(key);
+		if (!prev || isRicherSnapshot(snapshot, prev)) latest.set(key, snapshot);
+	}
+	return [...latest.values()];
+};
+
 export type ListedName = { readonly id: ArtifactId; readonly ticker: string; readonly issuerCik: string; readonly securityType: string };

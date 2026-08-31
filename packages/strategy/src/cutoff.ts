@@ -20,18 +20,22 @@ import {
 	type ObservedAt,
 	type RecordedAt,
 } from '@sonde/core';
-import { selectCompletedSipBars, type MarketSessionCandidate, type SipDailyBarCandidate } from '@sonde/probes';
+import { activeCalendarSessions, selectCompletedSipBars, type MarketSessionCandidate, type SipDailyBarCandidate } from '@sonde/probes';
 
 import { evaluateEligibility } from './eligibility';
 import { horizonCloseAt } from './horizon';
 import { evaluateUniverseLiquidity } from './liquidity';
-import { distinctReportingOwners } from './owners';
 import type { ListedName, StrategyFact } from './snapshots';
 import { isWindowDue } from './window';
 
 export type CutoffListing = ListedName;
 
 const barKeysFor = (listingId: string, bars: readonly { sessionDate: string }[]) => bars.map((bar) => sipBarRefId(listingId, bar.sessionDate));
+
+const factsObservedByCutoff = (snapshot: CandidateSnapshot, facts: readonly StrategyFact[]) => {
+	const owned = facts.filter((fact) => snapshot.qualifyingFactIds.some((id) => id === fact.id));
+	return owned.length === snapshot.qualifyingFactIds.length && owned.every((fact) => Date.parse(fact.observedAt) <= Date.parse(snapshot.cutoffAt));
+};
 
 export const materializeUniverseSnapshot = (input: {
 	listingId: string;
@@ -92,7 +96,7 @@ export const closeCandidate = (input: {
 		sessions: input.sessions,
 		fallbackRef: input.listing ? { kind: 'listing', id: input.listing.id } : { kind: 'candidate-snapshot', id: input.snapshot.id },
 	});
-	const owners = distinctReportingOwners(input.facts);
+	const owners = input.snapshot.reportingOwnerCiks;
 	const eligibilityResult = evaluateEligibility({
 		due: isWindowDue(input.snapshot.cutoffAt, input.now),
 		alreadyDecided: input.alreadyDecided,
@@ -100,7 +104,7 @@ export const closeCandidate = (input: {
 		universeIncluded: universe.included,
 		universeReason: universe.exclusionReasons[0],
 		ownerCount: owners.length,
-		allFactsByCutoff: input.facts.every((fact) => Date.parse(fact.observedAt) <= Date.parse(input.snapshot.cutoffAt)),
+		allFactsByCutoff: factsObservedByCutoff(input.snapshot, input.facts),
 	});
 	const eligibility = EligibilityDecision.parse({
 		id: eligibilityDecisionIdFrom({
@@ -170,7 +174,7 @@ const emitSignal = (input: {
 	sessions: readonly MarketSessionCandidate[];
 	recordedAt: string;
 }): Signal | undefined => {
-	const horizon = horizonCloseAt(input.sessions, input.universe.entrySessionDate);
+	const horizon = horizonCloseAt(activeCalendarSessions(input.sessions), input.universe.entrySessionDate);
 	if (!input.eligibility.eligible || !input.listing || !horizon) return undefined;
 	return Signal.parse({
 		id: signalIdFrom({

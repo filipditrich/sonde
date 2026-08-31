@@ -27,6 +27,6 @@ test('registers live, reconcile, calendar, SIP, and priority cutoff jobs', () =>
 			clearInterval: (() => undefined) as never,
 		},
 	);
-	expect(handles).toHaveLength(5);
+	expect(handles).toHaveLength(6);
 	runtime.stop();
 });

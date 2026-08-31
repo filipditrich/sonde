@@ -7,7 +7,7 @@ import { closeCandidate } from './cutoff';
 import { evaluateEligibility } from './eligibility';
 import { distinctReportingOwners } from './owners';
 import { isQualifyingPurchase } from './qualify';
-import { snapshotsFromFacts, type StrategyFact } from './snapshots';
+import { selectCutoffSnapshots, snapshotsFromFacts, type StrategyFact } from './snapshots';
 
 const session = (date: string): MarketSessionCandidate => ({
 	calendarVersion: 'alpaca-m0',
@@ -158,4 +158,39 @@ test('duplicate cutoff execution yields exactly one Signal identity', () => {
 	expect(first.signal?.strategyVersion).toBe(STRATEGY_VERSION);
 	expect(first.signal?.sourceIds.length).toBeGreaterThan(0);
 	expect(first.eligibility.id).toBe(second.eligibility.id);
+});
+
+test('the cutoff candidate is the richest snapshot when recordedAt ties', () => {
+	const facts = [
+		fact('0199a1f0-0000-7000-8000-000000000011', '0000000001', '2026-08-31T12:00:00.000Z'),
+		fact('0199a1f0-0000-7000-8000-000000000012', '0000000002', '2026-08-31T12:01:00.000Z'),
+		fact('0199a1f0-0000-7000-8000-000000000013', '0000000003', '2026-08-31T12:02:00.000Z'),
+	];
+	const snapshots = snapshotsFromFacts(facts, sessions, '2026-08-31T12:07:52.778Z');
+	expect(snapshots).toHaveLength(3);
+	const closed = selectCutoffSnapshots(snapshots);
+	expect(closed).toHaveLength(1);
+	expect(closed[0]?.reportingOwnerCiks).toHaveLength(3);
+	expect(closed[0]?.qualifyingFactIds).toHaveLength(3);
+});
+
+test('owner count comes from the snapshot when the fact join is empty', () => {
+	const facts = [
+		fact('0199a1f0-0000-7000-8000-000000000011', '0000000001', '2026-08-31T12:00:00.000Z'),
+		fact('0199a1f0-0000-7000-8000-000000000012', '0000000002', '2026-08-31T12:01:00.000Z'),
+	];
+	const latest = snapshotsFromFacts(facts, sessions, '2026-08-31T12:02:00.000Z').at(-1) as CandidateSnapshot;
+	const listing = { id: '0199a1f0-0000-7000-8000-000000000020' as never, ticker: 'CAKE', issuerCik: '0001702750', securityType: 'common' };
+	const closed = closeCandidate({
+		snapshot: latest,
+		facts: [],
+		listing,
+		sessions,
+		bars: liquidBars(listing.id),
+		alreadyDecided: false,
+		now: new Date('2026-08-31T13:20:00.000Z'),
+		recordedAt: '2026-08-31T13:20:00.000Z',
+	});
+	expect(closed.eligibility.failedChecks.map((item) => item.check)).not.toContain('two-distinct-owners');
+	expect(closed.eligibility.failedChecks.map((item) => item.check)).toContain('facts-observed-by-cutoff');
 });

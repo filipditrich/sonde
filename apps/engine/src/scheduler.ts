@@ -5,6 +5,7 @@ export type Job = {
 	readonly name: string;
 	readonly lane: Lane;
 	readonly run: () => Promise<{ readonly outcome: string; readonly meta?: Record<string, string> }>;
+	readonly due?: () => Promise<boolean>;
 };
 export type JobEventSink = { append(event: JobRunEvent): Promise<void> };
 

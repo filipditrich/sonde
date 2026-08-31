@@ -142,7 +142,7 @@ export const listLatestCandidateSnapshots = async (db: Database) => {
 		.select()
 		.from(candidateSnapshots)
 		.where(eq(candidateSnapshots.strategyVersion, STRATEGY_VERSION))
-		.orderBy(desc(candidateSnapshots.recordedAt));
+		.orderBy(desc(sql<number>`cardinality(${candidateSnapshots.qualifyingFactIds})`), desc(candidateSnapshots.recordedAt));
 	const latest = new Map<string, (typeof rows)[number]>();
 	for (const row of rows) {
 		const key = `${row.issuerCik}:${row.decisionWindowOpen.toISOString()}`;
@@ -158,29 +158,50 @@ export const listEligibilityKeys = async (db: Database) => {
 
 export const hasDueCandidates = async (db: Database, now: Date) => {
 	const [row] = await db.execute<{ due: boolean }>(sql`
-		SELECT EXISTS (
-			SELECT 1
-			FROM m1_candidate_snapshots snapshot
-			WHERE snapshot.strategy_version = ${STRATEGY_VERSION}
-			  AND snapshot.cutoff_at <= ${now.toISOString()}
-			  AND NOT EXISTS (
-			  	SELECT 1 FROM m1_eligibility_decisions decision
-			  	WHERE decision.strategy_version = snapshot.strategy_version
-			  	  AND decision.issuer_cik = snapshot.issuer_cik
-			  	  AND decision.decision_window_open = snapshot.decision_window_open
-			  )
+		SELECT (
+			EXISTS (
+				SELECT 1
+				FROM m1_candidate_snapshots snapshot
+				WHERE snapshot.strategy_version = ${STRATEGY_VERSION}
+				  AND snapshot.cutoff_at <= ${now.toISOString()}
+				  AND NOT EXISTS (
+				  	SELECT 1 FROM m1_eligibility_decisions decision
+				  	WHERE decision.strategy_version = snapshot.strategy_version
+				  	  AND decision.issuer_cik = snapshot.issuer_cik
+				  	  AND decision.decision_window_open = snapshot.decision_window_open
+				  )
+			)
+			AND (
+				SELECT outcome FROM m0_job_run_events
+				WHERE job = 'calendar-refresh' AND event = 'finished'
+				ORDER BY cursor DESC
+				LIMIT 1
+			) = 'ok'
+			AND (
+				SELECT outcome FROM m0_job_run_events
+				WHERE job = 'sip-daily-bars' AND event = 'finished'
+				ORDER BY cursor DESC
+				LIMIT 1
+			) = 'ok'
 		) AS due
 	`);
 	return Boolean(row?.due);
 };
 
-export const readDecisionTape = async (db: Database, asOf: Date, limit = 40) => {
+export const readDecisionTape = async (db: Database, asOf: Date, limit = 80) => {
 	const rows = await db.execute<{ kind: string; artifact_id: string; recorded_at: Date; summary: string }>(sql`
 		SELECT kind, artifact_id, recorded_at, summary FROM (
-			SELECT 'candidate-snapshot' AS kind, id::text AS artifact_id, recorded_at, issuer_cik || ' window ' || decision_window_open AS summary
+			SELECT 'candidate-snapshot' AS kind, id::text AS artifact_id, recorded_at,
+				issuer_cik || ' ' || cardinality(reporting_owner_ciks) || ' owners' AS summary
 			FROM m1_candidate_snapshots WHERE recorded_at <= ${asOf.toISOString()}
 			UNION ALL
-			SELECT 'eligibility-decision', id::text, recorded_at, issuer_cik || CASE WHEN eligible THEN ' eligible' ELSE ' ineligible' END
+			SELECT 'eligibility-decision', id::text, recorded_at,
+				issuer_cik || CASE
+					WHEN eligible THEN ' eligible'
+					ELSE ' ineligible (' || COALESCE((
+						SELECT string_agg(elem->>'check', ', ') FROM jsonb_array_elements(failed_checks) elem
+					), 'unspecified') || ')'
+				END
 			FROM m1_eligibility_decisions WHERE recorded_at <= ${asOf.toISOString()}
 			UNION ALL
 			SELECT 'signal', id::text, recorded_at, issuer_cik || ' long'
@@ -189,10 +210,20 @@ export const readDecisionTape = async (db: Database, asOf: Date, limit = 40) => 
 			SELECT 'decision-packet', id::text, recorded_at, issuer_cik || ' packet'
 			FROM m1_decision_packets WHERE recorded_at <= ${asOf.toISOString()}
 			UNION ALL
-			SELECT 'universe-snapshot', id::text, recorded_at, entry_session_date || CASE WHEN included THEN ' liquid' ELSE ' illiquid' END
+			SELECT 'universe-snapshot', id::text, recorded_at,
+				entry_session_date || CASE WHEN included THEN ' liquid' ELSE ' illiquid' END || CASE
+					WHEN cardinality(exclusion_reasons) > 0 THEN ' (' || array_to_string(exclusion_reasons, ', ') || ')'
+					ELSE ''
+				END
 			FROM m1_universe_snapshots WHERE recorded_at <= ${asOf.toISOString()}
 		) tape
-		ORDER BY recorded_at DESC
+		ORDER BY recorded_at DESC, CASE kind
+			WHEN 'signal' THEN 0
+			WHEN 'eligibility-decision' THEN 1
+			WHEN 'decision-packet' THEN 2
+			WHEN 'universe-snapshot' THEN 3
+			ELSE 4
+		END
 		LIMIT ${limit}
 	`);
 	return rows.map((row) => ({

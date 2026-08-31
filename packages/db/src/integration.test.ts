@@ -15,7 +15,8 @@ import {
 } from './index';
 import { APPEND_ONLY_TABLES } from './schema';
 
-const url = process.env.DATABASE_URL;
+/** Live `DATABASE_URL` is the operator ledger; bun auto-loads `.env` and these tests TRUNCATE. */
+const url = process.env.SONDE_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 const at = '2026-08-30T00:00:00.000Z';
 const later = '2026-08-30T00:01:00.000Z';

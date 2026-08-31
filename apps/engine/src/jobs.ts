@@ -37,6 +37,7 @@ export type EvidenceWriter = {
 	syncCandidateSnapshots?(now: Date): Promise<number>;
 	closeDueCandidates?(now: Date): Promise<{ signals: number; decisions: number }>;
 	hasDueCandidates?(now: Date): Promise<boolean>;
+	lastFinishedOutcome?(job: string): Promise<string | undefined>;
 };
 
 const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
@@ -231,6 +232,7 @@ const calendarJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => D
 const sipJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => Date): Job => ({
 	name: 'sip-daily-bars',
 	lane: 'ordinary',
+	due: async () => (await writer.lastFinishedOutcome?.('sip-daily-bars')) !== 'ok',
 	run: async () => {
 		const result = await ingestSipDailyBars(writer, alpaca.credentials, { fetchImpl: alpaca.fetchImpl, now });
 		const outcome = !result.failure ? 'ok' : notReadyFailure(result.failure) ? 'not-ready' : 'failed';

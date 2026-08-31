@@ -27,6 +27,12 @@ export const startEngine = (
 			if (ready) invoke(jobs.decisionCutoff);
 		});
 	};
+	const invokeIfDue = (job: Job) => {
+		if (!job.due) return;
+		void job.due().then((ready) => {
+			if (ready) invoke(job);
+		});
+	};
 	invoke(jobs.edgarLive);
 	invoke(jobs.edgarReconcile);
 	void scheduler.run(jobs.calendarRefresh).then(() => scheduler.run(jobs.sipDailyBars));
@@ -36,6 +42,7 @@ export const startEngine = (
 		timers.setInterval(() => invoke(jobs.edgarReconcile), 24 * 60 * 60_000),
 		timers.setInterval(() => invoke(jobs.calendarRefresh), 24 * 60 * 60_000),
 		timers.setInterval(() => invoke(jobs.sipDailyBars), 24 * 60 * 60_000),
+		timers.setInterval(() => invokeIfDue(jobs.sipDailyBars), 30_000),
 		timers.setInterval(invokePriority, PRIORITY_POLL_MS),
 	];
 	return { stop: () => handles.forEach((handle) => timers.clearInterval(handle)) };

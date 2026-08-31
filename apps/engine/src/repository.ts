@@ -9,6 +9,7 @@ import {
 	appendUniverseSnapshot,
 	commitParse,
 	hasDueCandidates,
+	lastFinishedJobOutcome,
 	listActiveListings,
 	listEligibilityKeys,
 	listLatestCandidateSnapshots,
@@ -95,6 +96,7 @@ export const createEvidenceWriter = (db: Database): EngineRepository => ({
 	syncCandidateSnapshots: (now) => syncCandidateSnapshots(strategyWriter(db), now.toISOString()),
 	closeDueCandidates: (now) => closeDueCandidates(strategyWriter(db), now),
 	hasDueCandidates: (now) => hasDueCandidates(db, now),
+	lastFinishedOutcome: (job) => lastFinishedJobOutcome(db, job),
 });
 
 const toSnapshot = (row: Awaited<ReturnType<typeof listLatestCandidateSnapshots>>[number]) =>
