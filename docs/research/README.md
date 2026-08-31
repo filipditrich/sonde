@@ -8,6 +8,8 @@ implemented directly.
 
 ## Current
 
+- [20 vs 21 bar liquidity](./spikes/20-vs-21-bar-liquidity/README.md) — founding-study Python
+  slice is 21 bars; Strategy V1 keeps twenty. Does not change the rule.
 - [LLM look-ahead contamination](./llm-lookahead-contamination.md) — why backtesting an LLM trader
   produces meaningless numbers. Promoted to [ADR 0004](../decisions/0004-no-llm-backtests.md).
 

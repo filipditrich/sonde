@@ -62,6 +62,11 @@ export const ArtifactKind = z.enum([
 	'market-session',
 	'sip-daily-bar',
 	'job-run-event',
+	'candidate-snapshot',
+	'eligibility-decision',
+	'signal',
+	'decision-packet',
+	'universe-snapshot',
 ]);
 export type ArtifactKind = z.infer<typeof ArtifactKind>;
 
@@ -245,6 +250,16 @@ export const CockpitSnapshot = z.object({
 			freshness: z.enum(['fresh', 'quiet', 'stale', 'unseen']),
 		}),
 	),
+	tape: z
+		.array(
+			z.object({
+				kind: z.enum(['candidate-snapshot', 'eligibility-decision', 'signal', 'decision-packet', 'universe-snapshot']),
+				artifactId: z.string().min(1),
+				recordedAt: RecordedAt,
+				summary: z.string().min(1),
+			}),
+		)
+		.default([]),
 });
 export type CockpitSnapshot = z.infer<typeof CockpitSnapshot>;
 export const CockpitStreamEvent = z.object({

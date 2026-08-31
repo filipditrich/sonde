@@ -6,6 +6,8 @@ test('uses exact VWAP dollar volume and the two-middle median', () => {
 	const bars = Array.from({ length: 20 }, (_, index) => ({ feed: 'sip', vwap: `${index + 1}.1`, volume: '10', close: '999' })) as never;
 	expect(completedTwentyBarLiquidity(bars).medianDollarVolume).toBe('106');
 	expect(multiplyDecimals('0.10000000000000001', '3')).toBe('0.30000000000000003');
+	const liquid = Array.from({ length: 20 }, () => ({ feed: 'sip', vwap: '20', volume: '2000000' })) as never;
+	expect(completedTwentyBarLiquidity(liquid).medianDollarVolume).toBe('40000000');
 });
 
 test('completed SIP window ignores a stale calendar version with a Saturday session', () => {

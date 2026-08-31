@@ -11,6 +11,7 @@
 	"dependencies": {
 		"@sonde/core": "workspace:*",
 		"@sonde/db": "workspace:*",
-		"@sonde/probes": "workspace:*"
+		"@sonde/probes": "workspace:*",
+		"@sonde/strategy": "workspace:*"
 	}
 }

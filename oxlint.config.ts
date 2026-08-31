@@ -67,6 +67,8 @@ export default defineConfig({
 		/** agent tooling */
 		'.claude/**',
 		'.cursor/**',
+		/** research spikes are notes, not product code */
+		'docs/research/spikes/**',
 	],
 	rules: {
 		'no-restricted-imports': ['error', { paths: toPaths(RESTRICTED_PACKAGES) }],

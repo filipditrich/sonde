@@ -8,5 +8,6 @@
  */
 
 export * from './client';
+export * from './milestone-one';
 export * from './milestone-zero';
 export * from './schema';

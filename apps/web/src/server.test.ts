@@ -14,6 +14,7 @@ const app = createCockpitServer(
 				funnel: { documents: 0, transactions: 0, qualifyingPurchases: 0 },
 				facts: [],
 				health: [{ job: 'edgar-live', lastEventAt: '2026-08-30T00:00:00.000Z', freshness: 'quiet' }],
+				tape: [{ kind: 'signal', artifactId: 'sig', recordedAt: '2026-08-30T00:00:00.000Z', summary: '0001702750 long' }],
 			}) as unknown as CockpitSnapshot,
 		eventsAfter: async (cursor) =>
 			(cursor === 1
@@ -47,7 +48,10 @@ describe('cockpit server', () => {
 		expect(payload).toContain('data:');
 		expect(payload).not.toContain('event: artifact');
 		const page = await app.fetch(new Request('http://local/', { headers }));
-		expect(await page.text()).toContain('quiet');
+		const body = await page.text();
+		expect(body).toContain('quiet');
+		expect(body).toContain('Decision tape');
+		expect(body).toContain('0001702750 long');
 	});
 	test('groups retained facts by issuer so a filing cluster is visible', async () => {
 		const clustered = createCockpitServer(

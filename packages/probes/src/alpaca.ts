@@ -96,7 +96,7 @@ const averageDecimals = (left: string, right: string): string => {
 	const odd = absolute % 2n !== 0n;
 	const digits = half.toString().padStart(scale + 1, '0');
 	const base = scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits;
-	return `${sign}${odd ? (scale ? `${base}5` : `${base}.5`) : base}`.replace(/\.?(0+)$/, '') || '0';
+	return `${sign}${odd ? (scale ? `${base}5` : `${base}.5`) : base}`.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '0';
 };
 
 /** M0's exact 20 completed-session liquidity value. Any non-SIP/missing-VWAP bar is not ready. */

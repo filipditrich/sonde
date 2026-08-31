@@ -43,6 +43,13 @@
 			"when": 1787900000002,
 			"tag": "0005_sonde_web_readonly",
 			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1787900000003,
+			"tag": "0006_milestone_one_strategy",
+			"breakpoints": true
 		}
 	]
 }

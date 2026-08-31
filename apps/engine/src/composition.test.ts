@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 import { startEngine } from './composition';
 
-test('registers live, reconcile, calendar, and SIP jobs', () => {
+test('registers live, reconcile, calendar, SIP, and priority cutoff jobs', () => {
 	const calls: string[] = [];
 	const scheduler = {
 		run: async (job: { name: string }) => {
@@ -17,6 +17,7 @@ test('registers live, reconcile, calendar, and SIP jobs', () => {
 			edgarReconcile: { name: 'edgar-reconcile', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
 			calendarRefresh: { name: 'calendar-refresh', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
 			sipDailyBars: { name: 'sip-daily-bars', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
+			decisionCutoff: { name: 'decision-cutoff', lane: 'priority', run: async () => ({ outcome: 'ok' }), due: async () => false },
 		},
 		{
 			setInterval: ((callback: () => void) => {
@@ -26,6 +27,6 @@ test('registers live, reconcile, calendar, and SIP jobs', () => {
 			clearInterval: (() => undefined) as never,
 		},
 	);
-	expect(handles).toHaveLength(4);
+	expect(handles).toHaveLength(5);
 	runtime.stop();
 });

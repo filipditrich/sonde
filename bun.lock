@@ -21,6 +21,7 @@
         "@sonde/core": "workspace:*",
         "@sonde/db": "workspace:*",
         "@sonde/probes": "workspace:*",
+        "@sonde/strategy": "workspace:*",
       },
     },
     "apps/web": {
@@ -57,6 +58,14 @@
         "@sonde/core": "workspace:*",
         "fast-xml-parser": "^5.0.0",
         "zod": "^4.0.0",
+      },
+    },
+    "packages/strategy": {
+      "name": "@sonde/strategy",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sonde/core": "workspace:*",
+        "@sonde/probes": "workspace:*",
       },
     },
   },
@@ -218,6 +227,8 @@
     "@sonde/engine": ["@sonde/engine@workspace:apps/engine"],
 
     "@sonde/probes": ["@sonde/probes@workspace:packages/probes"],
+
+    "@sonde/strategy": ["@sonde/strategy@workspace:packages/strategy"],
 
     "@sonde/web": ["@sonde/web@workspace:apps/web"],
 

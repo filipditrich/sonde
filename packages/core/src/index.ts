@@ -9,5 +9,6 @@
  * than guessed at now.
  */
 
+export * from './milestone-one';
 export * from './milestone-zero';
 export * from './primitives';

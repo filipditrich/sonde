@@ -23,6 +23,7 @@ const assertDocumentHash = (bytes: Uint8Array, sha256: string) => {
 
 import type { Database } from './client';
 import { freshnessOf, ORDINARY_JOBS } from './cockpit-health';
+import { readDecisionTape } from './milestone-one';
 import {
 	acquisitionAttempts,
 	cockpitEvents,
@@ -235,7 +236,11 @@ export const saveRuntimeCheckpoint = async (db: Database, key: string, value: ob
 	db.insert(runtimeCheckpoints).values({ key, value, updatedAt }).onConflictDoUpdate({ target: runtimeCheckpoints.key, set: { value, updatedAt } });
 
 export const listActiveListings = (db: Database) =>
-	db.select({ id: listings.id, ticker: listings.ticker }).from(listings).where(isNull(listings.effectiveTo));
+	db
+		.select({ id: listings.id, ticker: listings.ticker, issuerCik: issuers.cik, securityType: listings.securityType })
+		.from(listings)
+		.innerJoin(issuers, eq(listings.issuerId, issuers.id))
+		.where(isNull(listings.effectiveTo));
 
 export const listMarketSessionCandidates = async (db: Database) => {
 	const rows = await db.select().from(marketSessions);
@@ -330,6 +335,7 @@ export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Prom
 		funnel: await readFunnelAsOf(db, asOf),
 		facts: facts.map(toForm4Fact),
 		health: projectHealth(events, asOf),
+		tape: await readDecisionTape(db, asOf),
 	});
 };
 

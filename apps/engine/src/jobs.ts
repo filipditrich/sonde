@@ -34,6 +34,9 @@ export type EvidenceWriter = {
 	appendSipDailyBars?(acquisitionAttemptId: string, bars: readonly SipDailyBar[]): Promise<void>;
 	listListings?(): Promise<readonly { id: string; ticker: string }[]>;
 	listMarketSessions?(): Promise<readonly MarketSessionCandidate[]>;
+	syncCandidateSnapshots?(now: Date): Promise<number>;
+	closeDueCandidates?(now: Date): Promise<{ signals: number; decisions: number }>;
+	hasDueCandidates?(now: Date): Promise<boolean>;
 };
 
 const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
@@ -99,6 +102,7 @@ export const ingestEdgarPoll = async (
 		now,
 	);
 	await writer.saveCheckpoint(EDGAR_LIVE_CHECKPOINT, poll.state);
+	if (writer.syncCandidateSnapshots) await writer.syncCandidateSnapshots(now());
 	return { documents: poll.documents.length, facts, gapDetected: poll.gapDetected };
 };
 
@@ -123,6 +127,7 @@ export const ingestEdgarReconciliation = async (
 		writer,
 		now,
 	);
+	if (writer.syncCandidateSnapshots) await writer.syncCandidateSnapshots(now());
 	return { documents: documents.length, facts };
 };
 
@@ -215,6 +220,7 @@ const calendarJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => D
 	lane: 'ordinary',
 	run: async () => {
 		const result = await ingestAlpacaCalendar(writer, alpaca.credentials, { fetchImpl: alpaca.fetchImpl, now });
+		if (!result.failure && writer.syncCandidateSnapshots) await writer.syncCandidateSnapshots(now());
 		return {
 			outcome: result.failure ? 'failed' : 'ok',
 			meta: { sessions: String(result.sessions), ...(result.failure ? { failure: result.failure } : {}) },
@@ -239,7 +245,20 @@ const sipJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => Date):
 	},
 });
 
-/** Wires the four ordinary M0 jobs. Reconcile always uses the daily master index. */
+const cutoffJob = (writer: EvidenceWriter, now: () => Date): import('./composition').PriorityJob => {
+	const run = async () => {
+		if (!writer.closeDueCandidates) {
+			const meta: Record<string, string> = { failure: 'cutoff-writer-missing' };
+			return { outcome: 'not-ready', meta };
+		}
+		const result = await writer.closeDueCandidates(now());
+		const meta: Record<string, string> = { signals: String(result.signals), decisions: String(result.decisions) };
+		return { outcome: 'ok', meta };
+	};
+	return { name: 'decision-cutoff', lane: 'priority', due: async () => (writer.hasDueCandidates ? writer.hasDueCandidates(now()) : false), run };
+};
+
+/** Wires ordinary M0 jobs plus the isolated 09:20 priority cutoff. */
 export const createOrdinaryJobs = (input: {
 	fetcher: PoliteFetcher;
 	writer: EvidenceWriter;
@@ -271,5 +290,6 @@ export const createOrdinaryJobs = (input: {
 		},
 		calendarRefresh: alpaca ? calendarJob(input.writer, alpaca, now) : unconfigured('calendar-refresh'),
 		sipDailyBars: alpaca ? sipJob(input.writer, alpaca, now) : unconfigured('sip-daily-bars'),
+		decisionCutoff: cutoffJob(input.writer, now),
 	};
 };

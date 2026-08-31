@@ -1,10 +1,19 @@
 import type { Job } from './scheduler';
 import { Scheduler } from './scheduler';
 
-export type EngineJobs = { edgarLive: Job; edgarReconcile: Job; calendarRefresh: Job; sipDailyBars: Job };
+export type PriorityJob = Job & { due(): Promise<boolean> };
+export type EngineJobs = {
+	edgarLive: Job;
+	edgarReconcile: Job;
+	calendarRefresh: Job;
+	sipDailyBars: Job;
+	decisionCutoff: PriorityJob;
+};
 export type EngineRuntime = { stop(): void };
 
-/** Registers ordinary M0 jobs only; priority remains isolated for future market actions. */
+const PRIORITY_POLL_MS = 1_000;
+
+/** Ordinary collectors on intervals; priority cutoff is polled and never queued behind EDGAR. */
 export const startEngine = (
 	scheduler: Scheduler,
 	jobs: EngineJobs,
@@ -13,14 +22,21 @@ export const startEngine = (
 	const invoke = (job: Job) => {
 		void scheduler.run(job);
 	};
+	const invokePriority = () => {
+		void jobs.decisionCutoff.due().then((ready) => {
+			if (ready) invoke(jobs.decisionCutoff);
+		});
+	};
 	invoke(jobs.edgarLive);
 	invoke(jobs.edgarReconcile);
 	void scheduler.run(jobs.calendarRefresh).then(() => scheduler.run(jobs.sipDailyBars));
+	invokePriority();
 	const handles = [
 		timers.setInterval(() => invoke(jobs.edgarLive), 5 * 60_000),
 		timers.setInterval(() => invoke(jobs.edgarReconcile), 24 * 60 * 60_000),
 		timers.setInterval(() => invoke(jobs.calendarRefresh), 24 * 60 * 60_000),
 		timers.setInterval(() => invoke(jobs.sipDailyBars), 24 * 60 * 60_000),
+		timers.setInterval(invokePriority, PRIORITY_POLL_MS),
 	];
 	return { stop: () => handles.forEach((handle) => timers.clearInterval(handle)) };
 };

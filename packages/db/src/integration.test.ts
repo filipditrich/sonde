@@ -31,6 +31,11 @@ const ids = {
 	broker: '0199a1f0-0000-7000-8000-000000000007',
 	session: '0199a1f0-0000-7000-8000-000000000008',
 	job: '0199a1f0-0000-7000-8000-000000000009',
+	candidate: '0199a1f0-0000-7000-8000-000000000031',
+	universe: '0199a1f0-0000-7000-8000-000000000032',
+	eligibility: '0199a1f0-0000-7000-8000-000000000033',
+	signal: '0199a1f0-0000-7000-8000-000000000034',
+	packet: '0199a1f0-0000-7000-8000-000000000035',
 };
 
 const failure = async (run: () => PromiseLike<unknown>, pattern: RegExp) => {
@@ -53,7 +58,7 @@ suite('M0 PostgreSQL evidence contract', () => {
 	const db = createDatabase(url!);
 	const truncate = () =>
 		db.execute(
-			sql`TRUNCATE m0_cockpit_events, m0_job_run_events, m0_form4_transaction_facts, m0_parse_runs, m0_acquisition_attempts, m0_source_documents, m0_sip_daily_bars, m0_broker_assets, m0_listings, m0_issuers, m0_market_sessions, m0_runtime_checkpoints RESTART IDENTITY CASCADE`,
+			sql`TRUNCATE m0_cockpit_events, m0_job_run_events, m1_decision_packets, m1_signals, m1_eligibility_decisions, m1_universe_snapshots, m1_candidate_snapshots, m0_form4_transaction_facts, m0_parse_runs, m0_acquisition_attempts, m0_source_documents, m0_sip_daily_bars, m0_broker_assets, m0_listings, m0_issuers, m0_market_sessions, m0_runtime_checkpoints RESTART IDENTITY CASCADE`,
 		);
 	beforeAll(async () => {
 		await truncate();
@@ -88,6 +93,21 @@ suite('M0 PostgreSQL evidence contract', () => {
 			sql`INSERT INTO m0_job_run_events(id,run_id,job,lane,event,at,meta,recorded_at) VALUES(${ids.job},${ids.job},'edgar-live','ordinary','finished',${at},'{}',${at})`,
 		);
 		await db.execute(sql`INSERT INTO m0_runtime_checkpoints(key,value,updated_at) VALUES('sec-feed','{}',${at})`);
+		await db.execute(
+			sql`INSERT INTO m1_candidate_snapshots(id,strategy_version,issuer_cik,decision_window_open,cutoff_at,qualifying_fact_ids,reporting_owner_ciks,observed_at,recorded_at,input_refs) VALUES(${ids.candidate},'strategy-v1','0001702750',${at},${at},ARRAY[${ids.fact}]::text[],ARRAY['0001739310']::text[],${at},${at},${`[{"kind":"form4-transaction-fact","id":"${ids.fact}","role":"qualifying-purchase"}]`})`,
+		);
+		await db.execute(
+			sql`INSERT INTO m1_universe_snapshots(id,policy_version,listing_id,entry_session_date,bar_keys,included,exclusion_reasons,observed_at,recorded_at,input_refs) VALUES(${ids.universe},'universe-v1-20bar',${ids.listing},'2026-08-29',ARRAY[${`${ids.listing}:2026-08-29:sip:raw`}]::text[],false,ARRAY['fixture']::text[],${at},${at},${`[{"kind":"sip-daily-bar","id":"${ids.listing}:2026-08-29:sip:raw","role":"liquidity-bar"}]`})`,
+		);
+		await db.execute(
+			sql`INSERT INTO m1_eligibility_decisions(id,strategy_version,issuer_cik,decision_window_open,eligible,failed_checks,candidate_snapshot_id,universe_snapshot_id,observed_at,recorded_at,input_refs) VALUES(${ids.eligibility},'strategy-v1','0001702750',${at},false,'[]'::jsonb,${ids.candidate},${ids.universe},${at},${at},${`[{"kind":"candidate-snapshot","id":"${ids.candidate}","role":"closed-candidate"}]`})`,
+		);
+		await db.execute(
+			sql`INSERT INTO m1_signals(id,strategy_version,policy_version,issuer_cik,listing_id,direction,entry_convention,decision_window_open,horizon_close_at,rationale,source_ids,bootstrap_prior,observed_at,recorded_at,input_refs) VALUES(${ids.signal},'strategy-v1','universe-v1-20bar','0001702750',${ids.listing},'long','regular-session-open',${at},${at},'fixture',ARRAY[${ids.fact}]::text[],'{"label":"multi-insider-liquid","distinctOwnerCount":2}'::jsonb,${at},${at},${`[{"kind":"eligibility-decision","id":"${ids.eligibility}","role":"eligible-cutoff"}]`})`,
+		);
+		await db.execute(
+			sql`INSERT INTO m1_decision_packets(id,strategy_version,policy_version,issuer_cik,decision_window_open,calendar_version,eligibility_decision_id,signal_id,observed_at,recorded_at,input_refs) VALUES(${ids.packet},'strategy-v1','universe-v1-20bar','0001702750',${at},'alpaca-m0',${ids.eligibility},${ids.signal},${at},${at},${`[{"kind":"eligibility-decision","id":"${ids.eligibility}","role":"eligibility"}]`})`,
+		);
 	});
 	afterAll(truncate);
 	test('keeps bytes, repeated attempts, partial parse, decimals, and point-in-time facts', async () => {
@@ -119,6 +139,11 @@ suite('M0 PostgreSQL evidence contract', () => {
 			m0_market_sessions: `id='${ids.session}'`,
 			m0_job_run_events: `id='${ids.job}'`,
 			m0_cockpit_events: 'cursor=1',
+			m1_candidate_snapshots: `id='${ids.candidate}'`,
+			m1_universe_snapshots: `id='${ids.universe}'`,
+			m1_eligibility_decisions: `id='${ids.eligibility}'`,
+			m1_signals: `id='${ids.signal}'`,
+			m1_decision_packets: `id='${ids.packet}'`,
 		};
 		for (const table of APPEND_ONLY_TABLES) {
 			await failure(() => db.execute(sql.raw(`UPDATE ${table} SET schema_version='x' WHERE ${targets[table]}`)), /append-only|restrict/i);

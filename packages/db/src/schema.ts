@@ -223,6 +223,101 @@ export const cockpitEvents = pgTable('m0_cockpit_events', {
 	artifactId: text('artifact_id').notNull(),
 	recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
 });
+export const candidateSnapshots = pgTable(
+	'm1_candidate_snapshots',
+	{
+		id: uuid('id').primaryKey(),
+		schemaVersion: text('schema_version').notNull().default('m1'),
+		strategyVersion: text('strategy_version').notNull(),
+		issuerCik: text('issuer_cik').notNull(),
+		decisionWindowOpen: timestamp('decision_window_open', { withTimezone: true }).notNull(),
+		cutoffAt: timestamp('cutoff_at', { withTimezone: true }).notNull(),
+		qualifyingFactIds: text('qualifying_fact_ids').array().notNull(),
+		reportingOwnerCiks: text('reporting_owner_ciks').array().notNull(),
+		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
+	},
+	(table) => [uniqueIndex('m1_candidate_snapshot_id').on(table.id)],
+);
+export const universeSnapshots = pgTable('m1_universe_snapshots', {
+	id: uuid('id').primaryKey(),
+	schemaVersion: text('schema_version').notNull().default('m1'),
+	policyVersion: text('policy_version').notNull(),
+	listingId: uuid('listing_id').references(() => listings.id),
+	entrySessionDate: text('entry_session_date').notNull(),
+	barKeys: text('bar_keys').array().notNull(),
+	medianDollarVolume: numeric('median_dollar_volume'),
+	included: boolean('included').notNull(),
+	exclusionReasons: text('exclusion_reasons').array().notNull(),
+	observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+	recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+	inputRefs,
+});
+export const eligibilityDecisions = pgTable(
+	'm1_eligibility_decisions',
+	{
+		id: uuid('id').primaryKey(),
+		schemaVersion: text('schema_version').notNull().default('m1'),
+		strategyVersion: text('strategy_version').notNull(),
+		issuerCik: text('issuer_cik').notNull(),
+		decisionWindowOpen: timestamp('decision_window_open', { withTimezone: true }).notNull(),
+		eligible: boolean('eligible').notNull(),
+		failedChecks: jsonb('failed_checks').notNull(),
+		candidateSnapshotId: uuid('candidate_snapshot_id')
+			.notNull()
+			.references(() => candidateSnapshots.id),
+		universeSnapshotId: uuid('universe_snapshot_id').references(() => universeSnapshots.id),
+		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
+	},
+	(table) => [uniqueIndex('m1_eligibility_key').on(table.strategyVersion, table.issuerCik, table.decisionWindowOpen)],
+);
+export const signals = pgTable(
+	'm1_signals',
+	{
+		id: uuid('id').primaryKey(),
+		schemaVersion: text('schema_version').notNull().default('m1'),
+		strategyVersion: text('strategy_version').notNull(),
+		policyVersion: text('policy_version').notNull(),
+		issuerCik: text('issuer_cik').notNull(),
+		listingId: uuid('listing_id')
+			.notNull()
+			.references(() => listings.id),
+		direction: text('direction').notNull(),
+		entryConvention: text('entry_convention').notNull(),
+		decisionWindowOpen: timestamp('decision_window_open', { withTimezone: true }).notNull(),
+		horizonCloseAt: timestamp('horizon_close_at', { withTimezone: true }).notNull(),
+		rationale: text('rationale').notNull(),
+		sourceIds: text('source_ids').array().notNull(),
+		bootstrapPrior: jsonb('bootstrap_prior').notNull(),
+		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
+	},
+	(table) => [uniqueIndex('m1_signal_key').on(table.strategyVersion, table.issuerCik, table.decisionWindowOpen)],
+);
+export const decisionPackets = pgTable(
+	'm1_decision_packets',
+	{
+		id: uuid('id').primaryKey(),
+		schemaVersion: text('schema_version').notNull().default('m1'),
+		strategyVersion: text('strategy_version').notNull(),
+		policyVersion: text('policy_version').notNull(),
+		issuerCik: text('issuer_cik').notNull(),
+		decisionWindowOpen: timestamp('decision_window_open', { withTimezone: true }).notNull(),
+		calendarVersion: text('calendar_version').notNull(),
+		eligibilityDecisionId: uuid('eligibility_decision_id')
+			.notNull()
+			.references(() => eligibilityDecisions.id),
+		signalId: uuid('signal_id').references(() => signals.id),
+		observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+		recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+		inputRefs,
+	},
+	(table) => [uniqueIndex('m1_decision_packet_key').on(table.strategyVersion, table.issuerCik, table.decisionWindowOpen)],
+);
 export const APPEND_ONLY_TABLES = [
 	'm0_acquisition_attempts',
 	'm0_source_documents',
@@ -235,4 +330,9 @@ export const APPEND_ONLY_TABLES = [
 	'm0_market_sessions',
 	'm0_job_run_events',
 	'm0_cockpit_events',
+	'm1_candidate_snapshots',
+	'm1_universe_snapshots',
+	'm1_eligibility_decisions',
+	'm1_signals',
+	'm1_decision_packets',
 ] as const;
