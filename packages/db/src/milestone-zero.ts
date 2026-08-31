@@ -25,7 +25,7 @@ const assertDocumentHash = (bytes: Uint8Array, sha256: string) => {
 };
 
 import type { Database } from './client';
-import { freshnessOf, ORDINARY_JOBS } from './cockpit-health';
+import { ENGINE_HEARTBEAT_KEY, engineFreshnessOf, freshnessOf, ORDINARY_JOBS } from './cockpit-health';
 import { readDecisionTape } from './milestone-one';
 import { cockpitNextAction } from './next-action';
 import {
@@ -430,11 +430,14 @@ export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Prom
 		ORDER BY job, cursor DESC
 	`);
 	const cursorRows = await db.select({ cursor: sql<number>`coalesce(max(${cockpitEvents.cursor}), 0)` }).from(cockpitEvents);
+	const heartbeat = await readRuntimeCheckpoint<{ at?: string }>(db, ENGINE_HEARTBEAT_KEY);
+	const lastBeatAt = typeof heartbeat?.at === 'string' ? heartbeat.at : undefined;
 	return CockpitSnapshot.parse({
 		cursor: Number(cursorRows[0]?.cursor ?? 0),
 		asOf: asOf.toISOString() as CockpitSnapshotType['asOf'],
 		funnel: await readFunnelAsOf(db, asOf),
 		nextAction: await readNextAction(db, asOf),
+		engine: { freshness: engineFreshnessOf(lastBeatAt, asOf), ...(lastBeatAt ? { lastBeatAt } : {}) },
 		facts: facts.map(toForm4Fact),
 		health: projectHealth([...events], asOf),
 		tape: await readDecisionTape(db, asOf),

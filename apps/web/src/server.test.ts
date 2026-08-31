@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import type { CockpitSnapshot, CockpitStreamEvent } from '@sonde/core';
 
-import { formatRemaining } from './html';
+import { formatClock, formatRemaining, formatTminus } from './html';
+import { cursorGap, nextSeenCursor } from './live';
+import { forgetPaneSize, parsePaneSizes, recordPaneSize } from './panes';
 import { parseCockpitPath } from './paths';
 import { createCockpitServer, type CockpitReader } from './server';
 
@@ -22,6 +24,7 @@ const snapshot = {
 			{ name: 'sip-daily-bars', ready: true, detail: 'ok' },
 		],
 	},
+	engine: { freshness: 'stale', lastBeatAt: '2026-08-30T00:00:00.000Z' },
 	facts: [],
 	health: [{ job: 'edgar-live', lastEventAt: '2026-08-30T00:00:00.000Z', freshness: 'quiet' }],
 	tape: [
@@ -84,6 +87,35 @@ const reader = {
 			: undefined,
 	eligibility: async () => undefined,
 	packet: async () => undefined,
+	document: async (id: string) =>
+		id === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+			? {
+					sha256: id,
+					mediaType: 'application/xml',
+					byteSize: 12,
+					recordedAt: '2026-08-30T00:00:00.000Z',
+					facts: [{ factId: 'fact', summary: 'Issuer P 10 @ 1', href: '/facts/fact' }],
+				}
+			: undefined,
+	fact: async (id: string) =>
+		id === 'fact'
+			? {
+					id,
+					documentSha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+					accession: '0001702750-26-000001',
+					issuerCik: '0001702750',
+					issuerName: 'Issuer',
+					reportingOwnerCik: '0001739310',
+					reportingOwnerName: 'Owner',
+					transactionCode: 'P',
+					acquiredDisposed: 'A',
+					shares: '10',
+					pricePerShare: '1',
+					transactionDate: '2026-08-29',
+					observedAt: '2026-08-30T00:00:00.000Z',
+					recordedAt: '2026-08-30T00:00:00.000Z',
+				}
+			: undefined,
 	funnelStage: async () => ({ stage: 'documents' as const, count: 0, rows: [] }),
 } as unknown as CockpitReader;
 
@@ -115,14 +147,21 @@ describe('cockpit server', () => {
 		const page = await app.fetch(new Request('http://local/', { headers }));
 		const html = await page.text();
 		expect(html).toContain('quiet');
-		expect(html).toContain('Decision tape');
+		expect(html).toContain('>Tape</h2>');
 		expect(html).toContain('0001702750 long');
-		expect(html).toContain('Owner P 10 @ 1');
+		expect(html).toContain('Owner');
+		expect(html).toContain('10 @ 1');
 		expect(html).toContain('/signals/0199a1f0-0000-7000-8000-000000000034');
+		expect(html).toContain('/facts/fact');
 		expect(html).toContain('Decision Cutoff');
 		expect(html).toContain('not built in this milestone');
+		expect(html).toContain('data-engine="stale"');
 		expect(html).not.toContain('location.reload');
 		expect(html).toContain('EventSource');
+		expect(html).toContain('cursor=');
+		expect(html).toContain('data-pane="tape"');
+		expect(html).toContain('resize: both');
+		expect(html).toContain('sonde-pane-sizes');
 	});
 	test('groups retained facts by issuer so a filing cluster is visible', async () => {
 		const clustered = createCockpitServer(
@@ -133,8 +172,26 @@ describe('cockpit server', () => {
 						...snapshot,
 						funnel: { documents: 2, transactions: 2, qualifyingPurchases: 2, distinctOwnerCandidates: 0, liquidSignals: 0 },
 						facts: [
-							{ issuerCik: '0001702750', issuerName: 'Issuer', transactionCode: 'P', shares: '10', pricePerShare: '1' },
-							{ issuerCik: '0001702750', issuerName: 'Issuer', transactionCode: 'P', shares: '20', pricePerShare: '2' },
+							{
+								id: 'f1',
+								issuerCik: '0001702750',
+								issuerName: 'Issuer',
+								reportingOwnerName: 'Owner',
+								transactionDate: '2026-08-29',
+								transactionCode: 'P',
+								shares: '10',
+								pricePerShare: '1',
+							},
+							{
+								id: 'f2',
+								issuerCik: '0001702750',
+								issuerName: 'Issuer',
+								reportingOwnerName: 'Owner',
+								transactionDate: '2026-08-29',
+								transactionCode: 'P',
+								shares: '20',
+								pricePerShare: '2',
+							},
 						],
 					}) as unknown as CockpitSnapshot,
 			},
@@ -144,8 +201,8 @@ describe('cockpit server', () => {
 		const page = await clustered.fetch(new Request('http://local/', { headers: { cookie: session.headers.get('set-cookie')!.split(';')[0]! } }));
 		const body = await page.text();
 		expect(body).toContain('Issuer cluster 2');
-		expect(body).toContain('P 10 @ 1');
-		expect(body).toContain('P 20 @ 2');
+		expect(body).toContain('10 @ 1');
+		expect(body).toContain('20 @ 2');
 	});
 	test('Signal page shows rationale, labelled bootstrap prior, and causing filings', async () => {
 		const headers = await authenticated();
@@ -154,8 +211,27 @@ describe('cockpit server', () => {
 		expect(body).toContain('two owners in a liquid name');
 		expect(body).toContain('multi-insider-liquid');
 		expect(body).toContain('not event confidence');
-		expect(body).toContain('Owner P 10 @ 1');
+		expect(body).toContain('Owner');
+		expect(body).toContain('10 @ 1');
 		expect(body).toContain('not built in this milestone');
+	});
+	test('Source Document page lists parsed facts and does not dump bytes', async () => {
+		const headers = await authenticated();
+		const page = await app.fetch(new Request('http://local/documents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', { headers }));
+		const body = await page.text();
+		expect(body).toContain('Source Document');
+		expect(body).toContain('application/xml');
+		expect(body).toContain('/facts/fact');
+		expect(body).not.toContain('<xml');
+	});
+	test('Source Fact page reaches the Source Document without dumping bytes', async () => {
+		const headers = await authenticated();
+		const page = await app.fetch(new Request('http://local/facts/fact', { headers }));
+		const body = await page.text();
+		expect(body).toContain('Source Fact');
+		expect(body).toContain('Owner');
+		expect(body).toContain('/documents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+		expect(body).not.toContain('<xml');
 	});
 });
 
@@ -163,6 +239,11 @@ test('parses cockpit paths without treating later milestones as real routes', ()
 	expect(parseCockpitPath('/')).toEqual({ kind: 'home' });
 	expect(parseCockpitPath('/funnel/liquid-signals')).toEqual({ kind: 'funnel', stage: 'liquid-signals' });
 	expect(parseCockpitPath('/funnel/orders').kind).toBe('unknown');
+	expect(parseCockpitPath('/documents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toEqual({
+		kind: 'documents',
+		id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+	});
+	expect(parseCockpitPath('/facts/fact')).toEqual({ kind: 'facts', id: 'fact' });
 	expect(parseCockpitPath('/signals/0199a1f0-0000-7000-8000-000000000034')).toEqual({
 		kind: 'signals',
 		id: '0199a1f0-0000-7000-8000-000000000034',
@@ -173,4 +254,33 @@ test('remaining time is due at or after the deadline', () => {
 	expect(formatRemaining(0)).toBe('due');
 	expect(formatRemaining(-1)).toBe('due');
 	expect(formatRemaining(90 * 60_000)).toBe('1h 30m');
+});
+
+test('SSE cursor gaps are skipped ids, not the first event after connect', () => {
+	expect(cursorGap(0, 12)).toBe(false);
+	expect(cursorGap(2, 3)).toBe(false);
+	expect(cursorGap(2, 4)).toBe(true);
+	let seen = 311;
+	for (const next of [312, 313, 314]) {
+		expect(cursorGap(seen, next)).toBe(false);
+		seen = nextSeenCursor(seen, next);
+	}
+	expect(cursorGap(seen, 316)).toBe(true);
+});
+
+test('t-minus uses a compact scheduler stamp', () => {
+	expect(formatTminus(0)).toBe('due');
+	expect(formatTminus(90 * 60_000)).toBe('T-01:30');
+});
+
+test('chrome clock is Eastern and compact', () => {
+	expect(formatClock('2026-08-31T18:24:00.000Z')).toBe('ET Mon 31 Aug 14:24:00');
+});
+
+test('pane sizes persist as a plain map', () => {
+	expect(parsePaneSizes(null)).toEqual({});
+	expect(parsePaneSizes('nope')).toEqual({});
+	expect(parsePaneSizes('{"tape":{"w":"400px","h":"200px"}}')).toEqual({ tape: { w: '400px', h: '200px' } });
+	expect(recordPaneSize({}, 'facts', '320px', '180px')).toEqual({ facts: { w: '320px', h: '180px' } });
+	expect(forgetPaneSize({ tape: { w: '1px', h: '1px' } }, 'tape')).toEqual({});
 });

@@ -8,6 +8,7 @@
  */
 
 export * from './client';
+export * from './cockpit-health';
 export * from './cockpit-read';
 export * from './milestone-one';
 export * from './milestone-zero';

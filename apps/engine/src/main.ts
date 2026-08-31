@@ -1,4 +1,4 @@
-import { appendJobRunEvent, createDatabase } from '@sonde/db';
+import { ENGINE_HEARTBEAT_KEY, appendJobRunEvent, createDatabase } from '@sonde/db';
 import { PoliteFetcher, secProfile } from '@sonde/probes';
 
 import { startEngine } from './composition';
@@ -20,5 +20,7 @@ const fetcher = new PoliteFetcher(secProfile(contact));
 const key = process.env.ALPACA_API_KEY_ID;
 const secret = process.env.ALPACA_API_SECRET_KEY;
 const alpaca = key && secret ? { credentials: { key, secret } } : undefined;
-startEngine(scheduler, createOrdinaryJobs({ fetcher, writer, ...(alpaca ? { alpaca } : {}) }));
+startEngine(scheduler, createOrdinaryJobs({ fetcher, writer, ...(alpaca ? { alpaca } : {}) }), globalThis, () => {
+	void writer.saveCheckpoint(ENGINE_HEARTBEAT_KEY, { at: new Date().toISOString() });
+});
 console.log(`engine ordinary lane started${alpaca ? ' with Alpaca paper calendar and SIP' : ' without Alpaca credentials'}`);

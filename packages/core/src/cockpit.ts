@@ -104,3 +104,37 @@ export const CockpitFunnelPopulation = z.object({
 	),
 });
 export type CockpitFunnelPopulation = z.infer<typeof CockpitFunnelPopulation>;
+
+export const CockpitDocumentDetail = z.object({
+	sha256: z.string().regex(/^[0-9a-f]{64}$/),
+	mediaType: z.string().min(1),
+	byteSize: z.number().int().nonnegative(),
+	recordedAt: RecordedAt,
+	facts: z.array(
+		z.object({
+			factId: z.string().min(1),
+			summary: z.string().min(1),
+			href: z.string().min(1),
+		}),
+	),
+});
+export type CockpitDocumentDetail = z.infer<typeof CockpitDocumentDetail>;
+
+export const CockpitFactDetail = z.object({
+	id: z.string().min(1),
+	documentSha256: z.string().min(1),
+	accession: z.string().min(1),
+	issuerCik: Cik,
+	issuerName: z.string().min(1),
+	issuerTicker: z.string().min(1).optional(),
+	reportingOwnerCik: Cik,
+	reportingOwnerName: z.string().min(1),
+	transactionCode: z.string().min(1),
+	acquiredDisposed: z.string().min(1),
+	shares: z.string().min(1),
+	pricePerShare: z.string().min(1),
+	transactionDate: z.iso.date(),
+	observedAt: ObservedAt,
+	recordedAt: RecordedAt,
+});
+export type CockpitFactDetail = z.infer<typeof CockpitFactDetail>;

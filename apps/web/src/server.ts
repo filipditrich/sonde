@@ -2,7 +2,9 @@ import { timingSafeEqual } from 'node:crypto';
 
 import type {
 	CockpitCandidateDetail,
+	CockpitDocumentDetail,
 	CockpitEligibilityDetail,
+	CockpitFactDetail,
 	CockpitFunnelPopulation,
 	CockpitFunnelStage,
 	CockpitPacketDetail,
@@ -13,7 +15,7 @@ import type {
 
 import { parseCockpitPath } from './paths';
 import { homePage, loginPage, page, viewFragment } from './view';
-import { candidatePage, eligibilityPage, funnelPage, packetPage, signalPage } from './view-detail';
+import { candidatePage, documentPage, eligibilityPage, factPage, funnelPage, packetPage, signalPage } from './view-detail';
 
 export type CockpitReader = {
 	snapshot(): Promise<CockpitSnapshot>;
@@ -22,6 +24,8 @@ export type CockpitReader = {
 	signal(id: string): Promise<CockpitSignalDetail | undefined>;
 	eligibility(id: string): Promise<CockpitEligibilityDetail | undefined>;
 	packet(id: string): Promise<CockpitPacketDetail | undefined>;
+	document(id: string): Promise<CockpitDocumentDetail | undefined>;
+	fact(id: string): Promise<CockpitFactDetail | undefined>;
 	funnelStage(stage: CockpitFunnelStage): Promise<CockpitFunnelPopulation | undefined>;
 };
 
@@ -57,7 +61,9 @@ const streamEvents = (request: Request, url: URL, reader: CockpitReader): Respon
 			});
 		},
 	});
-	return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } });
+	return new Response(stream, {
+		headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+	});
 };
 
 const detailPage = async (reader: CockpitReader, kind: 'candidates' | 'signals' | 'eligibility' | 'packets', id: string) => {
@@ -86,6 +92,14 @@ const read = async (request: Request, url: URL, reader: CockpitReader): Promise<
 	if (path.kind === 'funnel') {
 		const population = await reader.funnelStage(path.stage);
 		return population ? html(page(funnelPage(population))) : notFound();
+	}
+	if (path.kind === 'documents') {
+		const detail = await reader.document(path.id);
+		return detail ? html(page(documentPage(detail))) : notFound();
+	}
+	if (path.kind === 'facts') {
+		const detail = await reader.fact(path.id);
+		return detail ? html(page(factPage(detail))) : notFound();
 	}
 	if (path.kind === 'unknown') return notFound();
 	return detailPage(reader, path.kind, path.id);

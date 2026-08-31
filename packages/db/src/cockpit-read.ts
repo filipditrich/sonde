@@ -2,7 +2,9 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
 	CockpitCandidateDetail,
+	CockpitDocumentDetail,
 	CockpitEligibilityDetail,
+	CockpitFactDetail,
 	CockpitFunnelPopulation,
 	CockpitFunnelStage,
 	CockpitPacketDetail,
@@ -13,7 +15,16 @@ import {
 
 import type { Database } from './client';
 import { readFunnelAsOf } from './milestone-zero';
-import { candidateSnapshots, decisionPackets, eligibilityDecisions, form4TransactionFacts, issuers, listings, signals } from './schema';
+import {
+	candidateSnapshots,
+	decisionPackets,
+	eligibilityDecisions,
+	form4TransactionFacts,
+	issuers,
+	listings,
+	signals,
+	sourceDocuments,
+} from './schema';
 
 const issuerNameOf = async (db: Database, cik: string) => {
 	const [row] = await db.select({ legalName: issuers.legalName }).from(issuers).where(eq(issuers.cik, cik)).limit(1);
@@ -212,6 +223,8 @@ const signalRows = (db: Database, instant: string) =>
 	`);
 
 const withHref = (stage: CockpitFunnelStage, id: string) => {
+	if (stage === 'documents') return { href: `/documents/${id}` };
+	if (stage === 'transactions' || stage === 'qualifying-purchases') return { href: `/facts/${id}` };
 	if (stage === 'distinct-owner-candidates') return { href: `/candidates/${id}` };
 	if (stage === 'liquid-signals') return { href: `/signals/${id}` };
 	return {};
@@ -239,5 +252,53 @@ export const readCockpitFunnelStage = async (db: Database, stage: CockpitFunnelS
 		stage,
 		count: stageCount(await readFunnelAsOf(db, asOf), stage),
 		rows: [...rows].map((row) => ({ id: row.id, summary: row.summary, ...withHref(stage, row.id) })),
+	});
+};
+
+export const readCockpitDocument = async (db: Database, sha256: string) => {
+	const [row] = await db.select().from(sourceDocuments).where(eq(sourceDocuments.sha256, sha256)).limit(1);
+	if (!row) return undefined;
+	const facts = await db
+		.select({
+			id: form4TransactionFacts.id,
+			issuerName: form4TransactionFacts.issuerName,
+			transactionCode: form4TransactionFacts.transactionCode,
+			shares: form4TransactionFacts.shares,
+			pricePerShare: form4TransactionFacts.pricePerShare,
+		})
+		.from(form4TransactionFacts)
+		.where(eq(form4TransactionFacts.documentSha256, sha256));
+	return CockpitDocumentDetail.parse({
+		sha256: row.sha256,
+		mediaType: row.mediaType,
+		byteSize: row.byteSize,
+		recordedAt: row.recordedAt.toISOString(),
+		facts: facts.map((fact) => ({
+			factId: fact.id,
+			summary: `${fact.issuerName} ${fact.transactionCode} ${fact.shares} @ ${fact.pricePerShare}`,
+			href: `/facts/${fact.id}`,
+		})),
+	});
+};
+
+export const readCockpitFact = async (db: Database, id: string) => {
+	const [row] = await db.select().from(form4TransactionFacts).where(eq(form4TransactionFacts.id, id)).limit(1);
+	if (!row) return undefined;
+	return CockpitFactDetail.parse({
+		id: row.id,
+		documentSha256: row.documentSha256,
+		accession: row.accession,
+		issuerCik: row.issuerCik,
+		issuerName: row.issuerName,
+		...(row.issuerTicker ? { issuerTicker: row.issuerTicker } : {}),
+		reportingOwnerCik: row.reportingOwnerCik,
+		reportingOwnerName: row.reportingOwnerName,
+		transactionCode: row.transactionCode,
+		acquiredDisposed: row.acquiredDisposed,
+		shares: row.shares,
+		pricePerShare: row.pricePerShare,
+		transactionDate: row.transactionDate,
+		observedAt: row.observedAt.toISOString(),
+		recordedAt: row.recordedAt.toISOString(),
 	});
 };

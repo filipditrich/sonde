@@ -1,5 +1,17 @@
 export const ORDINARY_JOBS = ['edgar-live', 'edgar-reconcile', 'calendar-refresh', 'sip-daily-bars', 'sic-refresh', 'decision-cutoff'] as const;
 export type JobFreshness = 'fresh' | 'quiet' | 'stale' | 'unseen';
+export type EngineFreshness = 'fresh' | 'stale' | 'unseen';
+
+export const ENGINE_HEARTBEAT_KEY = 'engine-heartbeat';
+export const ENGINE_STALE_MS = 45_000;
+
+/** A missing or old heartbeat means the engine process is gone, not that collectors are quiet. */
+export const engineFreshnessOf = (lastBeatAt: string | undefined, asOf: Date): EngineFreshness => {
+	if (!lastBeatAt) return 'unseen';
+	const age = asOf.getTime() - Date.parse(lastBeatAt);
+	if (!Number.isFinite(age) || age > ENGINE_STALE_MS) return 'stale';
+	return 'fresh';
+};
 
 const LIVE_STALE_MS = 15 * 60_000;
 const DAILY_STALE_MS = 36 * 60 * 60_000;

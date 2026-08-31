@@ -31,3 +31,30 @@ test('registers live, reconcile, calendar, SIP, and priority cutoff jobs', () =>
 	expect(handles).toHaveLength(8);
 	runtime.stop();
 });
+
+test('a heartbeat callback is invoked immediately and on its own interval', () => {
+	const beats: number[] = [];
+	const handles: unknown[] = [];
+	const runtime = startEngine(
+		{ run: async () => undefined } as never,
+		{
+			edgarLive: { name: 'edgar-live', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
+			edgarReconcile: { name: 'edgar-reconcile', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
+			calendarRefresh: { name: 'calendar-refresh', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
+			sipDailyBars: { name: 'sip-daily-bars', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
+			sicRefresh: { name: 'sic-refresh', lane: 'ordinary', run: async () => ({ outcome: 'ok' }) },
+			decisionCutoff: { name: 'decision-cutoff', lane: 'priority', run: async () => ({ outcome: 'ok' }), due: async () => false },
+		},
+		{
+			setInterval: ((callback: () => void) => {
+				handles.push(callback);
+				return handles.length as never;
+			}) as never,
+			clearInterval: (() => undefined) as never,
+		},
+		() => beats.push(1),
+	);
+	expect(beats).toEqual([1]);
+	expect(handles).toHaveLength(9);
+	runtime.stop();
+});

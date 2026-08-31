@@ -283,6 +283,10 @@ export const CockpitSnapshot = z.object({
 		liquidSignals: z.number().int().nonnegative(),
 	}),
 	nextAction: CockpitNextAction,
+	engine: z.object({
+		freshness: z.enum(['fresh', 'stale', 'unseen']),
+		lastBeatAt: RecordedAt.optional(),
+	}),
 	facts: z.array(Form4TransactionFact),
 	health: z.array(
 		z.object({

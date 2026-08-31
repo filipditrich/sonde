@@ -13,12 +13,14 @@ export type EngineJobs = {
 export type EngineRuntime = { stop(): void };
 
 const PRIORITY_POLL_MS = 1_000;
+export const ENGINE_HEARTBEAT_MS = 15_000;
 
 /** Ordinary collectors on intervals; priority cutoff is polled and never queued behind EDGAR. */
 export const startEngine = (
 	scheduler: Scheduler,
 	jobs: EngineJobs,
 	timers: { setInterval: typeof setInterval; clearInterval: typeof clearInterval } = globalThis,
+	beat?: () => void,
 ): EngineRuntime => {
 	const invoke = (job: Job) => {
 		void scheduler.run(job);
@@ -49,5 +51,9 @@ export const startEngine = (
 		timers.setInterval(() => invokeIfDue(jobs.sicRefresh), 30_000),
 		timers.setInterval(invokePriority, PRIORITY_POLL_MS),
 	];
+	if (beat) {
+		beat();
+		handles.push(timers.setInterval(beat, ENGINE_HEARTBEAT_MS));
+	}
 	return { stop: () => handles.forEach((handle) => timers.clearInterval(handle)) };
 };
