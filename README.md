@@ -143,7 +143,7 @@ bun --cwd apps/web start
 
 Open `http://127.0.0.1:3000/login`. Milestone 0 needs Postgres, `SONDE_CONTACT_EMAIL`,
 `SONDE_OPERATOR_TOKEN`, and Alpaca paper/data credentials for calendar and SIP. A model key is not
-required until Milestone 6. The cockpit may use `postgres://sonde_web:sonde_web@localhost:5432/sonde`.
+required until Milestone 6. The cockpit may use `postgres://sonde_web:sonde_web@127.0.0.1:5433/sonde`.
 
 ## Documentation
 

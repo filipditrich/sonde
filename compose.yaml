@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: sonde
       POSTGRES_DB: sonde
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - sonde-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,3 +18,4 @@ services:
 
 volumes:
   sonde-pgdata:
+    name: sonde_sonde-pgdata
