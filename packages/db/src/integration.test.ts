@@ -37,6 +37,7 @@ const ids = {
 	eligibility: '0199a1f0-0000-7000-8000-000000000033',
 	signal: '0199a1f0-0000-7000-8000-000000000034',
 	packet: '0199a1f0-0000-7000-8000-000000000035',
+	sic: '0199a1f0-0000-7000-8000-000000000036',
 };
 
 const failure = async (run: () => PromiseLike<unknown>, pattern: RegExp) => {
@@ -59,7 +60,7 @@ suite('M0 PostgreSQL evidence contract', () => {
 	const db = createDatabase(url!);
 	const truncate = () =>
 		db.execute(
-			sql`TRUNCATE m0_cockpit_events, m0_job_run_events, m1_decision_packets, m1_signals, m1_eligibility_decisions, m1_universe_snapshots, m1_candidate_snapshots, m0_form4_transaction_facts, m0_parse_runs, m0_acquisition_attempts, m0_source_documents, m0_sip_daily_bars, m0_broker_assets, m0_listings, m0_issuers, m0_market_sessions, m0_runtime_checkpoints RESTART IDENTITY CASCADE`,
+			sql`TRUNCATE m0_cockpit_events, m0_job_run_events, m1_decision_packets, m1_signals, m1_eligibility_decisions, m1_universe_snapshots, m1_candidate_snapshots, m0_form4_transaction_facts, m0_parse_runs, m0_acquisition_attempts, m0_source_documents, m0_sip_daily_bars, m0_broker_assets, m0_listings, m0_issuer_sic_classifications, m0_issuers, m0_market_sessions, m0_runtime_checkpoints RESTART IDENTITY CASCADE`,
 		);
 	beforeAll(async () => {
 		await truncate();
@@ -77,6 +78,9 @@ suite('M0 PostgreSQL evidence contract', () => {
 		);
 		await db.execute(
 			sql`INSERT INTO m0_issuers(id,cik,legal_name,effective_from,recorded_at) VALUES(${ids.issuer},'0001702750','Issuer','2026-01-01',${at})`,
+		);
+		await db.execute(
+			sql`INSERT INTO m0_issuer_sic_classifications(id,issuer_id,issuer_cik,sic,sic_major_group,sic_description,observed_at,recorded_at,input_refs) VALUES(${ids.sic},${ids.issuer},'0001702750','2834','28','Pharmaceutical Preparations',${at},${at},${`[{"kind":"source-document","id":"${sha}","role":"sec-submissions"}]`})`,
 		);
 		await db.execute(
 			sql`INSERT INTO m0_listings(id,issuer_id,ticker,venue,security_type,effective_from,recorded_at) VALUES(${ids.listing},${ids.issuer},'ISS','NYSE','common','2026-01-01',${at})`,
@@ -134,6 +138,7 @@ suite('M0 PostgreSQL evidence contract', () => {
 			m0_parse_runs: `id='${ids.parse}'`,
 			m0_form4_transaction_facts: `id='${ids.fact}'`,
 			m0_issuers: `id='${ids.issuer}'`,
+			m0_issuer_sic_classifications: `id='${ids.sic}'`,
 			m0_listings: `id='${ids.listing}'`,
 			m0_broker_assets: `id='${ids.broker}'`,
 			m0_sip_daily_bars: `listing_id='${ids.listing}'`,

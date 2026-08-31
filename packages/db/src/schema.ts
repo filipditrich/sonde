@@ -115,6 +115,20 @@ export const issuers = pgTable(
 	},
 	(table) => [uniqueIndex('m0_issuer_effective_key').on(table.cik, table.effectiveFrom)],
 );
+export const issuerSicClassifications = pgTable('m0_issuer_sic_classifications', {
+	id: uuid('id').primaryKey(),
+	schemaVersion: text('schema_version').notNull().default('m0'),
+	issuerId: uuid('issuer_id')
+		.notNull()
+		.references(() => issuers.id),
+	issuerCik: text('issuer_cik').notNull(),
+	sic: text('sic').notNull(),
+	sicMajorGroup: text('sic_major_group').notNull(),
+	sicDescription: text('sic_description').notNull(),
+	observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+	recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+	inputRefs,
+});
 export const listings = pgTable('m0_listings', {
 	id: uuid('id').primaryKey(),
 	schemaVersion: text('schema_version').notNull().default('m0'),
@@ -324,6 +338,7 @@ export const APPEND_ONLY_TABLES = [
 	'm0_parse_runs',
 	'm0_form4_transaction_facts',
 	'm0_issuers',
+	'm0_issuer_sic_classifications',
 	'm0_listings',
 	'm0_broker_assets',
 	'm0_sip_daily_bars',

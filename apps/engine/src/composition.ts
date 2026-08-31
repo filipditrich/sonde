@@ -7,6 +7,7 @@ export type EngineJobs = {
 	edgarReconcile: Job;
 	calendarRefresh: Job;
 	sipDailyBars: Job;
+	sicRefresh: Job;
 	decisionCutoff: PriorityJob;
 };
 export type EngineRuntime = { stop(): void };
@@ -36,6 +37,7 @@ export const startEngine = (
 	invoke(jobs.edgarLive);
 	invoke(jobs.edgarReconcile);
 	void scheduler.run(jobs.calendarRefresh).then(() => scheduler.run(jobs.sipDailyBars));
+	invoke(jobs.sicRefresh);
 	invokePriority();
 	const handles = [
 		timers.setInterval(() => invoke(jobs.edgarLive), 5 * 60_000),
@@ -43,6 +45,8 @@ export const startEngine = (
 		timers.setInterval(() => invoke(jobs.calendarRefresh), 24 * 60 * 60_000),
 		timers.setInterval(() => invoke(jobs.sipDailyBars), 24 * 60 * 60_000),
 		timers.setInterval(() => invokeIfDue(jobs.sipDailyBars), 30_000),
+		timers.setInterval(() => invoke(jobs.sicRefresh), 24 * 60 * 60_000),
+		timers.setInterval(() => invokeIfDue(jobs.sicRefresh), 30_000),
 		timers.setInterval(invokePriority, PRIORITY_POLL_MS),
 	];
 	return { stop: () => handles.forEach((handle) => timers.clearInterval(handle)) };

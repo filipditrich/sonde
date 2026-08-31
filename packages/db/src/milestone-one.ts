@@ -189,11 +189,18 @@ export const hasDueCandidates = async (db: Database, now: Date) => {
 };
 
 export const readDecisionTape = async (db: Database, asOf: Date, limit = 80) => {
+	const instant = asOf.toISOString();
 	const rows = await db.execute<{ kind: string; artifact_id: string; recorded_at: Date; summary: string }>(sql`
 		SELECT kind, artifact_id, recorded_at, summary FROM (
-			SELECT 'candidate-snapshot' AS kind, id::text AS artifact_id, recorded_at,
-				issuer_cik || ' ' || cardinality(reporting_owner_ciks) || ' owners' AS summary
-			FROM m1_candidate_snapshots WHERE recorded_at <= ${asOf.toISOString()}
+			SELECT 'candidate-snapshot' AS kind, snapshot.id::text AS artifact_id, snapshot.recorded_at,
+				snapshot.issuer_cik || ' ' || cardinality(snapshot.reporting_owner_ciks) || ' owners' || COALESCE(' SIC ' || classified.sic_major_group, '') AS summary
+			FROM m1_candidate_snapshots snapshot
+			LEFT JOIN LATERAL (
+				SELECT sic_major_group FROM m0_issuer_sic_classifications classified
+				WHERE classified.issuer_cik = snapshot.issuer_cik AND classified.recorded_at <= ${instant}
+				ORDER BY classified.recorded_at DESC LIMIT 1
+			) classified ON true
+			WHERE snapshot.recorded_at <= ${instant}
 			UNION ALL
 			SELECT 'eligibility-decision', id::text, recorded_at,
 				issuer_cik || CASE
@@ -202,20 +209,20 @@ export const readDecisionTape = async (db: Database, asOf: Date, limit = 80) => 
 						SELECT string_agg(elem->>'check', ', ') FROM jsonb_array_elements(failed_checks) elem
 					), 'unspecified') || ')'
 				END
-			FROM m1_eligibility_decisions WHERE recorded_at <= ${asOf.toISOString()}
+			FROM m1_eligibility_decisions WHERE recorded_at <= ${instant}
 			UNION ALL
 			SELECT 'signal', id::text, recorded_at, issuer_cik || ' long'
-			FROM m1_signals WHERE recorded_at <= ${asOf.toISOString()}
+			FROM m1_signals WHERE recorded_at <= ${instant}
 			UNION ALL
 			SELECT 'decision-packet', id::text, recorded_at, issuer_cik || ' packet'
-			FROM m1_decision_packets WHERE recorded_at <= ${asOf.toISOString()}
+			FROM m1_decision_packets WHERE recorded_at <= ${instant}
 			UNION ALL
 			SELECT 'universe-snapshot', id::text, recorded_at,
 				entry_session_date || CASE WHEN included THEN ' liquid' ELSE ' illiquid' END || CASE
 					WHEN cardinality(exclusion_reasons) > 0 THEN ' (' || array_to_string(exclusion_reasons, ', ') || ')'
 					ELSE ''
 				END
-			FROM m1_universe_snapshots WHERE recorded_at <= ${asOf.toISOString()}
+			FROM m1_universe_snapshots WHERE recorded_at <= ${instant}
 		) tape
 		ORDER BY recorded_at DESC, CASE kind
 			WHEN 'signal' THEN 0
@@ -226,10 +233,58 @@ export const readDecisionTape = async (db: Database, asOf: Date, limit = 80) => 
 		END
 		LIMIT ${limit}
 	`);
-	return rows.map((row) => ({
+	const tape = rows.map((row) => ({
 		kind: row.kind as 'candidate-snapshot' | 'eligibility-decision' | 'signal' | 'decision-packet' | 'universe-snapshot',
 		artifactId: row.artifact_id,
 		recordedAt: new Date(row.recorded_at).toISOString(),
 		summary: row.summary,
+	}));
+	return attachTapeCauses(db, tape);
+};
+
+const attachTapeCauses = async (db: Database, tape: readonly { kind: string; artifactId: string; recordedAt: string; summary: string }[]) => {
+	const ids = tape.flatMap((item) => (item.kind === 'candidate-snapshot' || item.kind === 'signal' ? [item.artifactId] : []));
+	if (!ids.length) return tape.map((item) => ({ ...item, causes: [] }));
+	const idList = sql.join(
+		ids.map((id) => sql`${id}::uuid`),
+		sql`, `,
+	);
+	const rows = await db.execute<{
+		artifact_id: string;
+		fact_id: string;
+		reporting_owner_cik: string;
+		reporting_owner_name: string;
+		transaction_code: string;
+		shares: string;
+		price_per_share: string;
+	}>(sql`
+		SELECT snapshot.id::text AS artifact_id, fact.id::text AS fact_id, fact.reporting_owner_cik, fact.reporting_owner_name,
+			fact.transaction_code, fact.shares::text, fact.price_per_share
+		FROM m1_candidate_snapshots snapshot
+		JOIN m0_form4_transaction_facts fact ON fact.id::text = ANY(snapshot.qualifying_fact_ids)
+		WHERE snapshot.id IN (${idList})
+		UNION ALL
+		SELECT signal.id::text, fact.id::text, fact.reporting_owner_cik, fact.reporting_owner_name,
+			fact.transaction_code, fact.shares::text, fact.price_per_share
+		FROM m1_signals signal
+		JOIN m0_form4_transaction_facts fact ON fact.id::text = ANY(signal.source_ids)
+		WHERE signal.id IN (${idList})
+	`);
+	const byArtifact = new Map<string, (typeof rows)[number][]>();
+	for (const row of rows) {
+		const group = byArtifact.get(row.artifact_id) ?? [];
+		group.push(row);
+		byArtifact.set(row.artifact_id, group);
+	}
+	return tape.map((item) => ({
+		...item,
+		causes: (byArtifact.get(item.artifactId) ?? []).map((row) => ({
+			factId: row.fact_id,
+			reportingOwnerCik: row.reporting_owner_cik,
+			reportingOwnerName: row.reporting_owner_name,
+			transactionCode: row.transaction_code,
+			shares: row.shares,
+			pricePerShare: row.price_per_share,
+		})),
 	}));
 };

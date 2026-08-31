@@ -62,6 +62,7 @@ export const ArtifactKind = z.enum([
 	'market-session',
 	'sip-daily-bar',
 	'job-run-event',
+	'issuer-sic-classification',
 	'candidate-snapshot',
 	'eligibility-decision',
 	'signal',
@@ -181,6 +182,21 @@ export const Listing = envelope('listing').extend({
 	effectiveTo: z.iso.date().optional(),
 });
 export type Listing = z.infer<typeof Listing>;
+
+export const issuerSicClassificationIdFrom = (cik: string, sic: string, documentSha256: string) =>
+	artifactIdFrom(`issuer-sic-classification:${cik}:${sic}:${documentSha256}`);
+
+export const IssuerSicClassification = envelope('issuer-sic-classification')
+	.extend({
+		issuerId: ArtifactId,
+		issuerCik: Cik,
+		sic: z.string().regex(/^\d{4}$/),
+		sicMajorGroup: z.string().regex(/^\d{2}$/),
+		sicDescription: z.string().min(1),
+		observedAt: ObservedAt,
+	})
+	.refine((row) => row.sicMajorGroup === row.sic.slice(0, 2), 'SIC major group is the first two digits');
+export type IssuerSicClassification = z.infer<typeof IssuerSicClassification>;
 export const BrokerAsset = envelope('broker-asset').extend({
 	listingId: ArtifactId,
 	broker: z.string().min(1),
@@ -257,6 +273,18 @@ export const CockpitSnapshot = z.object({
 				artifactId: z.string().min(1),
 				recordedAt: RecordedAt,
 				summary: z.string().min(1),
+				causes: z
+					.array(
+						z.object({
+							factId: z.string().min(1),
+							reportingOwnerCik: z.string().min(1),
+							reportingOwnerName: z.string().min(1),
+							transactionCode: z.string().min(1),
+							shares: z.string().min(1),
+							pricePerShare: z.string().min(1),
+						}),
+					)
+					.default([]),
 			}),
 		)
 		.default([]),

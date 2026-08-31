@@ -1,4 +1,4 @@
-export const ORDINARY_JOBS = ['edgar-live', 'edgar-reconcile', 'calendar-refresh', 'sip-daily-bars', 'decision-cutoff'] as const;
+export const ORDINARY_JOBS = ['edgar-live', 'edgar-reconcile', 'calendar-refresh', 'sip-daily-bars', 'sic-refresh', 'decision-cutoff'] as const;
 export type JobFreshness = 'fresh' | 'quiet' | 'stale' | 'unseen';
 
 const LIVE_STALE_MS = 15 * 60_000;

@@ -9,6 +9,7 @@ import {
 	type CockpitSnapshot as CockpitSnapshotType,
 	type CockpitStreamEvent as CockpitStreamEventType,
 	type Form4TransactionFact as Form4TransactionFactType,
+	type IssuerSicClassification,
 	type ObservedAt,
 	type ParseRun,
 	artifactIdFrom,
@@ -29,6 +30,7 @@ import {
 	cockpitEvents,
 	form4TransactionFacts,
 	issuers,
+	issuerSicClassifications,
 	jobRunEvents,
 	listings,
 	marketSessions,
@@ -264,6 +266,34 @@ export const asOfForm4Facts = (db: Database, asOf: ObservedAt, limit = 100) =>
 		.where(lte(form4TransactionFacts.observedAt, new Date(asOf)))
 		.orderBy(desc(form4TransactionFacts.observedAt))
 		.limit(limit);
+
+export const listIssuersMissingSic = async (db: Database) => {
+	const rows = await db.execute<{ id: string; cik: string }>(sql`
+		SELECT DISTINCT ON (issuer.cik) issuer.id::text AS id, issuer.cik
+		FROM m0_issuers issuer
+		WHERE NOT EXISTS (
+			SELECT 1 FROM m0_issuer_sic_classifications classified
+			WHERE classified.issuer_cik = issuer.cik
+		)
+	`);
+	return [...rows];
+};
+
+export const appendIssuerSicClassification = async (db: Database, classification: IssuerSicClassification) =>
+	db
+		.insert(issuerSicClassifications)
+		.values({
+			id: classification.id,
+			issuerId: classification.issuerId,
+			issuerCik: classification.issuerCik,
+			sic: classification.sic,
+			sicMajorGroup: classification.sicMajorGroup,
+			sicDescription: classification.sicDescription,
+			observedAt: new Date(classification.observedAt),
+			recordedAt: new Date(classification.recordedAt),
+			inputRefs: classification.inputRefs,
+		})
+		.onConflictDoNothing();
 
 export const lastFinishedJobOutcome = async (db: Database, job: string) => {
 	const [row] = await db.execute<{ outcome: string | null }>(sql`

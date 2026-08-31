@@ -16,6 +16,7 @@ import {
 
 import type { EngineJobs } from './composition';
 import type { Job } from './scheduler';
+import { createSicJob } from './sic';
 
 export { previousEasternDate };
 
@@ -38,6 +39,8 @@ export type EvidenceWriter = {
 	closeDueCandidates?(now: Date): Promise<{ signals: number; decisions: number }>;
 	hasDueCandidates?(now: Date): Promise<boolean>;
 	lastFinishedOutcome?(job: string): Promise<string | undefined>;
+	listIssuersMissingSic?(): Promise<readonly { id: string; cik: string }[]>;
+	appendIssuerSic?(classification: import('@sonde/core').IssuerSicClassification): Promise<void>;
 };
 
 const EDGAR_LIVE_CHECKPOINT = 'edgar-live';
@@ -292,6 +295,17 @@ export const createOrdinaryJobs = (input: {
 		},
 		calendarRefresh: alpaca ? calendarJob(input.writer, alpaca, now) : unconfigured('calendar-refresh'),
 		sipDailyBars: alpaca ? sipJob(input.writer, alpaca, now) : unconfigured('sip-daily-bars'),
+		sicRefresh: createSicJob(
+			input.fetcher,
+			{
+				persistFetch: (request) => input.writer.persistFetch(request),
+				listIssuersMissingSic: async () => (await input.writer.listIssuersMissingSic?.()) ?? [],
+				appendIssuerSic: async (classification) => {
+					await input.writer.appendIssuerSic?.(classification);
+				},
+			},
+			now,
+		),
 		decisionCutoff: cutoffJob(input.writer, now),
 	};
 };

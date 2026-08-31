@@ -7,6 +7,7 @@ import {
 	appendSignal,
 	appendSipDailyBar,
 	appendUniverseSnapshot,
+	appendIssuerSicClassification,
 	commitParse,
 	hasDueCandidates,
 	lastFinishedJobOutcome,
@@ -15,6 +16,7 @@ import {
 	listLatestCandidateSnapshots,
 	listMarketSessionCandidates,
 	listSipBarsForListing,
+	listIssuersMissingSic,
 	listStrategyFacts,
 	persistAcquisition,
 	readRuntimeCheckpoint,
@@ -97,6 +99,10 @@ export const createEvidenceWriter = (db: Database): EngineRepository => ({
 	closeDueCandidates: (now) => closeDueCandidates(strategyWriter(db), now),
 	hasDueCandidates: (now) => hasDueCandidates(db, now),
 	lastFinishedOutcome: (job) => lastFinishedJobOutcome(db, job),
+	listIssuersMissingSic: () => listIssuersMissingSic(db),
+	appendIssuerSic: async (classification) => {
+		await appendIssuerSicClassification(db, classification);
+	},
 });
 
 const toSnapshot = (row: Awaited<ReturnType<typeof listLatestCandidateSnapshots>>[number]) =>
