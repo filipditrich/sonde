@@ -233,7 +233,9 @@ availability, replication, or enterprise recovery program. TimescaleDB waits for
 Model usage and cost are recorded and displayed without an automated budget threshold.
 
 The cockpit requires an operator session on loopback. Future remote access uses a private network
-and strong single-user authentication; it is never directly public.
+and strong single-user authentication; it is never directly public. The separately deployed
+`apps/site` product site is static and read-only: it has no operational imports, runtime state,
+controls, or route into the cockpit ([ADR 0030](./decisions/0030-public-product-site.md)).
 
 ## Target repository layout
 
@@ -241,7 +243,8 @@ and strong single-user authentication; it is never directly public.
 sonde/
 ├── apps/
 │   ├── engine/       # scheduled and priority lanes; module composition
-│   └── web/          # private cockpit, SSE and authenticated controls
+│   ├── web/          # private cockpit, SSE and authenticated controls
+│   └── site/         # independent public, static-first product site
 ├── packages/
 │   ├── core/         # Zod schemas and domain primitives
 │   ├── probes/       # source acquisition and parsing adapters

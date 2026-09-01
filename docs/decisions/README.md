@@ -37,6 +37,7 @@ there was no real alternative, it does not need an ADR.
 | [0027](./0027-single-pinned-analyst-runtime.md)               | One pinned analyst runtime before tiered routing           | Accepted   |
 | [0028](./0028-operations-first-private-cockpit.md)            | Operations-first private cockpit                           | Accepted   |
 | [0029](./0029-simple-local-operations.md)                     | Simple local operations for the personal system            | Accepted   |
+| [0030](./0030-public-product-site.md)                         | Independent public product site                            | Accepted   |
 
 If you read only one, read [0004](./0004-no-llm-backtests.md) — the milestone ordering, the storage
 schema, and the scoring apparatus all follow from it.
