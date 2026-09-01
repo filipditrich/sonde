@@ -95,6 +95,7 @@ const reader = {
 					byteSize: 12,
 					recordedAt: '2026-08-30T00:00:00.000Z',
 					facts: [{ factId: 'fact', summary: 'Issuer P 10 @ 1', href: '/facts/fact' }],
+					preview: { text: '<ownershipDocument>hi</ownershipDocument>', truncated: false },
 				}
 			: undefined,
 	fact: async (id: string) =>
@@ -214,6 +215,7 @@ describe('cockpit server', () => {
 		expect(body).toContain('Owner');
 		expect(body).toContain('10 @ 1');
 		expect(body).toContain('not built in this milestone');
+		expect(body).toContain('/eligibility/elig');
 	});
 	test('Source Document page lists parsed facts and does not dump bytes', async () => {
 		const headers = await authenticated();
@@ -222,6 +224,8 @@ describe('cockpit server', () => {
 		expect(body).toContain('Source Document');
 		expect(body).toContain('application/xml');
 		expect(body).toContain('/facts/fact');
+		expect(body).toContain('&lt;ownershipDocument&gt;hi&lt;/ownershipDocument&gt;');
+		expect(body).not.toContain('<ownershipDocument>');
 		expect(body).not.toContain('<xml');
 	});
 	test('Source Fact page reaches the Source Document without dumping bytes', async () => {
@@ -231,6 +235,7 @@ describe('cockpit server', () => {
 		expect(body).toContain('Source Fact');
 		expect(body).toContain('Owner');
 		expect(body).toContain('/documents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+		expect(body).toContain('open retained bytes');
 		expect(body).not.toContain('<xml');
 	});
 });

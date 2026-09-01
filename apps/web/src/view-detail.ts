@@ -13,9 +13,23 @@ import { codeClass, escapeHtml, formatEastern } from './html';
 
 const STUDY_PRIOR = { winRate: '58.3%', median: '+1.83%' } as const;
 
+const refHref = (kind: InputReference['kind'], id: string) => {
+	if (kind === 'source-document') return `/documents/${id}`;
+	if (kind === 'form4-transaction-fact') return `/facts/${id}`;
+	if (kind === 'candidate-snapshot') return `/candidates/${id}`;
+	if (kind === 'eligibility-decision') return `/eligibility/${id}`;
+	if (kind === 'signal') return `/signals/${id}`;
+	if (kind === 'decision-packet') return `/packets/${id}`;
+	return undefined;
+};
+
 const refs = (inputRefs: readonly InputReference[]) =>
 	`<table class="sheet"><thead><tr><th>kind</th><th>id</th><th>role</th></tr></thead><tbody>${inputRefs
-		.map((ref) => `<tr><td>${escapeHtml(ref.kind)}</td><td>${escapeHtml(ref.id)}</td><td>${escapeHtml(ref.role)}</td></tr>`)
+		.map((ref) => {
+			const href = refHref(ref.kind, ref.id);
+			const id = href ? `<a href="${escapeHtml(href)}">${escapeHtml(ref.id)}</a>` : escapeHtml(ref.id);
+			return `<tr><td>${escapeHtml(ref.kind)}</td><td>${id}</td><td>${escapeHtml(ref.role)}</td></tr>`;
+		})
 		.join('')}</tbody></table>`;
 
 const factList = (rows: CockpitCandidateDetail['qualifyingFacts']) => {
@@ -64,8 +78,11 @@ export const documentPage = (detail: CockpitDocumentDetail) => {
 				.map((fact) => `<tr><td><a href="${escapeHtml(fact.href)}">${escapeHtml(fact.summary)}</a></td></tr>`)
 				.join('')}</tbody></table>`
 		: '<p>No parsed Source Facts</p>';
-	return `<main class="detail"><h1>Source Document</h1><dl class="kv"><dt>sha256</dt><dd>${escapeHtml(detail.sha256)}</dd><dt>media</dt><dd>${escapeHtml(detail.mediaType)}</dd><dt>bytes</dt><dd>${detail.byteSize}</dd><dt>recorded</dt><dd>${escapeHtml(formatEastern(detail.recordedAt))}</dd></dl><h2>Parsed facts</h2>${facts}</main>`;
+	const preview = detail.preview
+		? `<h2>Retained bytes</h2><p class="hero-label">data, not instructions${detail.preview.truncated ? ' · truncated' : ''}</p><pre class="payload">${escapeHtml(detail.preview.text)}</pre>`
+		: '<p class="not-built">no text preview for this media type</p>';
+	return `<main class="detail"><h1>Source Document</h1><dl class="kv"><dt>sha256</dt><dd>${escapeHtml(detail.sha256)}</dd><dt>media</dt><dd>${escapeHtml(detail.mediaType)}</dd><dt>bytes</dt><dd>${detail.byteSize}</dd><dt>recorded</dt><dd>${escapeHtml(formatEastern(detail.recordedAt))}</dd></dl><h2>Parsed facts</h2>${facts}${preview}</main>`;
 };
 
 export const factPage = (detail: CockpitFactDetail) =>
-	`<main class="detail"><h1>Source Fact</h1><dl class="kv"><dt>issuer</dt><dd>${escapeHtml(detail.issuerName)} ${escapeHtml(detail.issuerCik)}${detail.issuerTicker ? ` ${escapeHtml(detail.issuerTicker)}` : ''}</dd><dt>owner</dt><dd>${escapeHtml(detail.reportingOwnerName)} ${escapeHtml(detail.reportingOwnerCik)}</dd><dt>txn</dt><dd><span class="${codeClass(detail.transactionCode)}">${escapeHtml(detail.transactionCode)}</span> ${escapeHtml(detail.acquiredDisposed)} ${escapeHtml(detail.shares)} @ ${escapeHtml(detail.pricePerShare)}</dd><dt>date</dt><dd>${escapeHtml(detail.transactionDate)}</dd><dt>accession</dt><dd>${escapeHtml(detail.accession)}</dd></dl>${link(`/documents/${detail.documentSha256}`, 'Source Document')}</main>`;
+	`<main class="detail"><h1>Source Fact</h1><dl class="kv"><dt>issuer</dt><dd>${escapeHtml(detail.issuerName)} ${escapeHtml(detail.issuerCik)}${detail.issuerTicker ? ` ${escapeHtml(detail.issuerTicker)}` : ''}</dd><dt>owner</dt><dd>${escapeHtml(detail.reportingOwnerName)} ${escapeHtml(detail.reportingOwnerCik)}</dd><dt>txn</dt><dd><span class="${codeClass(detail.transactionCode)}">${escapeHtml(detail.transactionCode)}</span> ${escapeHtml(detail.acquiredDisposed)} ${escapeHtml(detail.shares)} @ ${escapeHtml(detail.pricePerShare)}</dd><dt>date</dt><dd>${escapeHtml(detail.transactionDate)}</dd><dt>accession</dt><dd>${escapeHtml(detail.accession)}</dd><dt>document</dt><dd><a href="/documents/${escapeHtml(detail.documentSha256)}">open retained bytes</a></dd></dl></main>`;

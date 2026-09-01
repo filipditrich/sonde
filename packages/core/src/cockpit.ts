@@ -117,6 +117,12 @@ export const CockpitDocumentDetail = z.object({
 			href: z.string().min(1),
 		}),
 	),
+	preview: z
+		.object({
+			text: z.string().min(1),
+			truncated: z.boolean(),
+		})
+		.optional(),
 });
 export type CockpitDocumentDetail = z.infer<typeof CockpitDocumentDetail>;
 

@@ -104,6 +104,11 @@ details > summary::-webkit-details-marker { display: none; }
 .kv { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 0.22rem 1rem; margin: 0 0 0.8rem; }
 .kv dt { color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; padding-top: 0.12rem; }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
+.payload {
+	margin: 0; padding: 0.55rem 0.6rem; max-height: 70vh; overflow: auto;
+	white-space: pre-wrap; overflow-wrap: anywhere; background: #050505;
+	border: 1px solid var(--line); color: var(--fg);
+}
 @media (max-width: 1100px) {
 	.pane { width: 50%; }
 	.pane-wide { width: 100%; }

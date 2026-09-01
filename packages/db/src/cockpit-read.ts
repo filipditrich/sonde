@@ -14,6 +14,7 @@ import {
 } from '@sonde/core';
 
 import type { Database } from './client';
+import { documentPreview } from './document-preview';
 import { readFunnelAsOf } from './milestone-zero';
 import {
 	candidateSnapshots,
@@ -256,7 +257,17 @@ export const readCockpitFunnelStage = async (db: Database, stage: CockpitFunnelS
 };
 
 export const readCockpitDocument = async (db: Database, sha256: string) => {
-	const [row] = await db.select().from(sourceDocuments).where(eq(sourceDocuments.sha256, sha256)).limit(1);
+	const [row] = await db
+		.select({
+			sha256: sourceDocuments.sha256,
+			mediaType: sourceDocuments.mediaType,
+			byteSize: sourceDocuments.byteSize,
+			recordedAt: sourceDocuments.recordedAt,
+			bytes: sourceDocuments.bytes,
+		})
+		.from(sourceDocuments)
+		.where(eq(sourceDocuments.sha256, sha256))
+		.limit(1);
 	if (!row) return undefined;
 	const facts = await db
 		.select({
@@ -268,6 +279,7 @@ export const readCockpitDocument = async (db: Database, sha256: string) => {
 		})
 		.from(form4TransactionFacts)
 		.where(eq(form4TransactionFacts.documentSha256, sha256));
+	const preview = documentPreview(row.bytes, row.mediaType);
 	return CockpitDocumentDetail.parse({
 		sha256: row.sha256,
 		mediaType: row.mediaType,
@@ -278,6 +290,7 @@ export const readCockpitDocument = async (db: Database, sha256: string) => {
 			summary: `${fact.issuerName} ${fact.transactionCode} ${fact.shares} @ ${fact.pricePerShare}`,
 			href: `/facts/${fact.id}`,
 		})),
+		...(preview ? { preview } : {}),
 	});
 };
 
