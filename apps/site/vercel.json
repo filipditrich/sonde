@@ -1,5 +1,5 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
-	"buildCommand": "bun ./node_modules/next/dist/bin/next build",
+	"buildCommand": "node ./node_modules/next/dist/bin/next build",
 	"framework": "nextjs"
 }
