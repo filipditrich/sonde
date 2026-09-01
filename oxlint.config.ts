@@ -51,6 +51,19 @@ const AGENTS_FORBIDDEN = [
 	},
 ];
 
+/** the public site is isolated from every operational/domain package and application module — ADR 0030 */
+const PUBLIC_SITE_FORBIDDEN = [
+	['@sonde/core', 'The public site is read-only and must not import operational or domain packages. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/db', 'The public site must not reach the evidence database. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/engine', 'The public site must not import the engine. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/probes', 'The public site must not acquire source data. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/risk', 'The public site must not import enforcement code. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/planning', 'The public site must not import planning code. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/venue', 'The public site must not import venue code. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/agents', 'The public site must not import analyst runtime code. See docs/decisions/0030-public-product-site.md.'],
+	['@sonde/web', 'The public site must not import the private cockpit. See docs/decisions/0030-public-product-site.md.'],
+] as const satisfies ReadonlyArray<readonly [string, string]>;
+
 export default defineConfig({
 	options: {
 		/** extra lint on top of `tsc --noEmit` — do not set typeCheck */
@@ -90,6 +103,36 @@ export default defineConfig({
 		'no-console': ['warn', { allow: ['warn', 'error'] }],
 	},
 	overrides: [
+		{
+			files: ['apps/site/**'],
+			rules: {
+				'no-restricted-imports': [
+					'error',
+					{
+						paths: toPaths(PUBLIC_SITE_FORBIDDEN),
+						patterns: [
+							{
+								group: [
+									'@sonde/*',
+									'@sonde/**',
+									'**/web/**',
+									'**/engine/**',
+									'**/db/**',
+									'**/probes/**',
+									'**/risk/**',
+									'**/agents/**',
+									'**/planning/**',
+									'**/venue/**',
+									'**/packages/**',
+									'**/apps/**',
+								],
+								message: 'The public site cannot import operational application modules. See docs/decisions/0030-public-product-site.md.',
+							},
+						],
+					},
+				],
+			},
+		},
 		{
 			/**
 			 * The enforcement plane. Stricter than the rest of the tree on purpose: the gate is

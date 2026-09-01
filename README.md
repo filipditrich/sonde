@@ -19,6 +19,11 @@ cockpit shows what the system knew, decided, executed, rejected, and learned.
 
 The primary goal is a system worth operating and watching, not a performance claim.
 
+The public product site lives in [`apps/site`](apps/site). It is independently deployed,
+static-first, and deliberately isolated from the private, loopback-only operations cockpit; it has
+no operational package imports, private runtime state, or controls. See
+[ADR 0030](docs/decisions/0030-public-product-site.md).
+
 ## Strategy V1
 
 The launch strategy trades one measured pattern:
