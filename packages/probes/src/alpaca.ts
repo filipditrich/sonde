@@ -231,15 +231,29 @@ export const activeCalendarSessions = <T extends { calendarVersion: string; obse
 	return latest ? sessions.filter((session) => session.calendarVersion === latest.calendarVersion) : [];
 };
 
-/** Returns the latest exactly-twenty completed sessions, rejecting gaps and the still-open session. */
+/** Sessions paper SIP can answer: closed, and not the still-unfetchable Eastern civil date. */
+export const fetchableCompletedSessions = (sessions: readonly MarketSessionCandidate[], now: Date) => {
+	const end = previousEasternDate(now);
+	return activeCalendarSessions(sessions)
+		.filter((session) => new Date(session.closesAt) <= now && session.sessionDate <= end)
+		.sort((left, right) => left.sessionDate.localeCompare(right.sessionDate));
+};
+
+/** True when the last SIP run failed or stored bars lag the latest fetchable completed session. */
+export const sipRefreshDue = (input: { lastOutcome?: string; sessions: readonly MarketSessionCandidate[]; latestStored?: string; now: Date }) => {
+	if (input.lastOutcome !== 'ok') return true;
+	const fetchable = fetchableCompletedSessions(input.sessions, input.now).at(-1)?.sessionDate;
+	if (!fetchable) return false;
+	return (input.latestStored ?? '') < fetchable;
+};
+
+/** Returns the latest exactly-twenty fetchable completed sessions, rejecting gaps. */
 export const selectCompletedSipBars = (
 	bars: readonly SipDailyBarCandidate[],
 	sessions: readonly MarketSessionCandidate[],
 	now: Date,
 ): { bars: readonly SipDailyBarCandidate[]; failure?: string } => {
-	const completed = activeCalendarSessions(sessions)
-		.filter((session) => new Date(session.closesAt) <= now)
-		.sort((left, right) => left.sessionDate.localeCompare(right.sessionDate));
+	const completed = fetchableCompletedSessions(sessions, now);
 	if (completed.length < 20) return { bars: [], failure: 'alpaca-sip-fewer-than-twenty-completed-sessions' };
 	const expected = completed.slice(-20).map((session) => session.sessionDate);
 	const byDate = new Map(bars.map((bar) => [bar.sessionDate, bar]));

@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test';
 
-import { completedTwentyBarLiquidity, fetchAlpacaCalendar, fetchSipDailyBars, multiplyDecimals, selectCompletedSipBars } from './alpaca';
+import {
+	completedTwentyBarLiquidity,
+	fetchAlpacaCalendar,
+	fetchSipDailyBars,
+	multiplyDecimals,
+	selectCompletedSipBars,
+	sipRefreshDue,
+} from './alpaca';
 
 test('uses exact VWAP dollar volume and the two-middle median', () => {
 	const bars = Array.from({ length: 20 }, (_, index) => ({ feed: 'sip', vwap: `${index + 1}.1`, volume: '10', close: '999' })) as never;
@@ -60,6 +67,76 @@ test('completed SIP window ignores a stale calendar version with a Saturday sess
 		observedAt: '2026-08-31T00:00:00.000Z',
 	}));
 	expect(selectCompletedSipBars(bars, sessions, new Date('2026-08-31T12:00:00.000Z')).bars).toHaveLength(20);
+});
+
+test('completed SIP window stops at the previous Eastern date after the regular session closes', () => {
+	const weekday = (date: string) => ({
+		calendarVersion: 'alpaca-m0',
+		sessionDate: date,
+		opensAt: `${date}T13:30:00.000Z`,
+		closesAt: `${date}T20:00:00.000Z`,
+		earlyClose: false,
+		source: 'alpaca' as const,
+		observedAt: '2026-09-01T21:00:00.000Z',
+	});
+	const dates = [
+		'2026-08-04',
+		'2026-08-05',
+		'2026-08-06',
+		'2026-08-07',
+		'2026-08-10',
+		'2026-08-11',
+		'2026-08-12',
+		'2026-08-13',
+		'2026-08-14',
+		'2026-08-17',
+		'2026-08-18',
+		'2026-08-19',
+		'2026-08-20',
+		'2026-08-21',
+		'2026-08-24',
+		'2026-08-25',
+		'2026-08-26',
+		'2026-08-27',
+		'2026-08-28',
+		'2026-08-31',
+		'2026-09-01',
+	];
+	const fetchable = dates.slice(0, -1);
+	const sessions = dates.map(weekday);
+	const bars = fetchable.map((sessionDate) => ({
+		listingId: '0199a1f0-0000-7000-8000-000000000001' as never,
+		sessionDate,
+		feed: 'sip' as const,
+		adjustment: 'raw' as const,
+		open: '1',
+		high: '1',
+		low: '1',
+		close: '1',
+		volume: '1',
+		vwap: '1',
+		observedAt: '2026-09-01T21:00:00.000Z',
+	}));
+	const selected = selectCompletedSipBars(bars, sessions, new Date('2026-09-01T21:03:00.000Z'));
+	expect(selected.failure).toBeUndefined();
+	expect(selected.bars.map((bar) => bar.sessionDate)).toEqual(fetchable.slice(-20));
+});
+
+test('SIP refresh is due when stored bars lag the last fetchable completed session', () => {
+	const weekday = (date: string) => ({
+		calendarVersion: 'alpaca-m0',
+		sessionDate: date,
+		opensAt: `${date}T13:30:00.000Z`,
+		closesAt: `${date}T20:00:00.000Z`,
+		earlyClose: false,
+		source: 'alpaca' as const,
+		observedAt: '2026-09-01T00:00:00.000Z',
+	});
+	const sessions = ['2026-08-28', '2026-08-31'].map(weekday);
+	const afterMondayMidnight = new Date('2026-09-01T04:01:00.000Z');
+	expect(sipRefreshDue({ lastOutcome: 'ok', sessions, latestStored: '2026-08-28', now: afterMondayMidnight })).toBe(true);
+	expect(sipRefreshDue({ lastOutcome: 'ok', sessions, latestStored: '2026-08-31', now: afterMondayMidnight })).toBe(false);
+	expect(sipRefreshDue({ lastOutcome: 'not-ready', sessions, latestStored: '2026-08-31', now: afterMondayMidnight })).toBe(true);
 });
 
 test('SIP bar request asks Alpaca for a trailing year of daily bars', async () => {

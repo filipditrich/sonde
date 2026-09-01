@@ -12,6 +12,7 @@ import {
 	materializeSipDailyBars,
 	previousEasternDate,
 	selectCompletedSipBars,
+	sipRefreshDue,
 } from '@sonde/probes';
 
 import type { EngineJobs } from './composition';
@@ -39,6 +40,7 @@ export type EvidenceWriter = {
 	closeDueCandidates?(now: Date): Promise<{ signals: number; decisions: number }>;
 	hasDueCandidates?(now: Date): Promise<boolean>;
 	lastFinishedOutcome?(job: string): Promise<string | undefined>;
+	latestSipSessionDate?(): Promise<string | undefined>;
 	listIssuersMissingSic?(): Promise<readonly { id: string; cik: string }[]>;
 	appendIssuerSic?(classification: import('@sonde/core').IssuerSicClassification): Promise<void>;
 };
@@ -235,7 +237,13 @@ const calendarJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => D
 const sipJob = (writer: EvidenceWriter, alpaca: AlpacaRuntime, now: () => Date): Job => ({
 	name: 'sip-daily-bars',
 	lane: 'ordinary',
-	due: async () => (await writer.lastFinishedOutcome?.('sip-daily-bars')) !== 'ok',
+	due: async () =>
+		sipRefreshDue({
+			lastOutcome: await writer.lastFinishedOutcome?.('sip-daily-bars'),
+			sessions: (await writer.listMarketSessions?.()) ?? [],
+			latestStored: await writer.latestSipSessionDate?.(),
+			now: now(),
+		}),
 	run: async () => {
 		const result = await ingestSipDailyBars(writer, alpaca.credentials, { fetchImpl: alpaca.fetchImpl, now });
 		const outcome = !result.failure ? 'ok' : notReadyFailure(result.failure) ? 'not-ready' : 'failed';

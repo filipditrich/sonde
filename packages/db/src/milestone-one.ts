@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, max, sql } from 'drizzle-orm';
 
 import type { CandidateSnapshot, DecisionPacket, EligibilityDecision, Signal, UniverseSnapshot } from '@sonde/core';
 import { STRATEGY_VERSION } from '@sonde/core';
@@ -136,6 +136,11 @@ export const listResolvedListings = (db: Database) =>
 		.innerJoin(issuers, eq(listings.issuerId, issuers.id));
 
 export const listSipBarsForListing = (db: Database, listingId: string) => db.select().from(sipDailyBars).where(eq(sipDailyBars.listingId, listingId));
+
+export const latestSipSessionDate = async (db: Database) => {
+	const [row] = await db.select({ sessionDate: max(sipDailyBars.sessionDate) }).from(sipDailyBars);
+	return row?.sessionDate ?? undefined;
+};
 
 export const listLatestCandidateSnapshots = async (db: Database) => {
 	const rows = await db

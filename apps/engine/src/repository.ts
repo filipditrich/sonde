@@ -16,6 +16,7 @@ import {
 	listLatestCandidateSnapshots,
 	listMarketSessionCandidates,
 	listSipBarsForListing,
+	latestSipSessionDate,
 	listIssuersMissingSic,
 	listStrategyFacts,
 	persistAcquisition,
@@ -99,6 +100,7 @@ export const createEvidenceWriter = (db: Database): EngineRepository => ({
 	closeDueCandidates: (now) => closeDueCandidates(strategyWriter(db), now),
 	hasDueCandidates: (now) => hasDueCandidates(db, now),
 	lastFinishedOutcome: (job) => lastFinishedJobOutcome(db, job),
+	latestSipSessionDate: () => latestSipSessionDate(db),
 	listIssuersMissingSic: () => listIssuersMissingSic(db),
 	appendIssuerSic: async (classification) => {
 		await appendIssuerSicClassification(db, classification);
