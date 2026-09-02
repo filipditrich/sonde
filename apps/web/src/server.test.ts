@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { CockpitSnapshot, CockpitStreamEvent } from '@sonde/core';
 
-import { formatClock, formatRemaining, formatTminus } from './html';
+import { formatClock, formatRemaining, formatTminus, marketPhase, tapeTag } from './html';
 import { cursorGap, nextSeenCursor } from './live';
 import { forgetPaneSize, parsePaneSizes, recordPaneSize } from './panes';
 import { parseCockpitPath } from './paths';
@@ -150,6 +150,9 @@ describe('cockpit server', () => {
 		expect(html).toContain('quiet');
 		expect(html).toContain('>Tape</h2>');
 		expect(html).toContain('0001702750 long');
+		expect(html).toContain('class="tag sig">SIG</span>');
+		expect(html).toContain('data-phase=');
+		expect(html).toContain('session ');
 		expect(html).toContain('Owner');
 		expect(html).toContain('10 @ 1');
 		expect(html).toContain('/signals/0199a1f0-0000-7000-8000-000000000034');
@@ -202,6 +205,7 @@ describe('cockpit server', () => {
 		const page = await clustered.fetch(new Request('http://local/', { headers: { cookie: session.headers.get('set-cookie')!.split(';')[0]! } }));
 		const body = await page.text();
 		expect(body).toContain('Issuer cluster 2');
+		expect(body).toContain('class="ticker"');
 		expect(body).toContain('10 @ 1');
 		expect(body).toContain('20 @ 2');
 	});
@@ -275,11 +279,24 @@ test('SSE cursor gaps are skipped ids, not the first event after connect', () =>
 
 test('t-minus uses a compact scheduler stamp', () => {
 	expect(formatTminus(0)).toBe('due');
-	expect(formatTminus(90 * 60_000)).toBe('T-01:30');
+	expect(formatTminus(90 * 60_000)).toBe('T-01:30:00');
 });
 
 test('chrome clock is Eastern and compact', () => {
 	expect(formatClock('2026-08-31T18:24:00.000Z')).toBe('ET Mon 31 Aug 14:24:00');
+});
+
+test('market phase is the Eastern regular session, not operating state', () => {
+	expect(marketPhase('2026-08-31T18:24:00.000Z')).toBe('rth');
+	expect(marketPhase('2026-09-02T09:33:00.000Z')).toBe('pre');
+	expect(marketPhase('2026-09-02T20:30:00.000Z')).toBe('after');
+	expect(marketPhase('2026-09-05T15:00:00.000Z')).toBe('closed');
+});
+
+test('tape tags are short ledger marks', () => {
+	expect(tapeTag('signal')).toBe('SIG');
+	expect(tapeTag('eligibility-decision')).toBe('ELG');
+	expect(tapeTag('candidate-snapshot')).toBe('CND');
 });
 
 test('pane sizes persist as a plain map', () => {

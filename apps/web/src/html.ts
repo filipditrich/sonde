@@ -29,9 +29,40 @@ export const formatTminus = (ms: number) => {
 	if (ms <= 0) return 'due';
 	const hours = Math.floor(ms / 3_600_000);
 	const minutes = Math.floor((ms % 3_600_000) / 60_000);
-	if (hours >= 24) return `T-${Math.floor(hours / 24)}d ${two(hours % 24)}:${two(minutes)}`;
-	return `T-${two(hours)}:${two(minutes)}`;
+	const seconds = Math.floor((ms % 60_000) / 1_000);
+	if (hours >= 24) return `T-${Math.floor(hours / 24)}d ${two(hours % 24)}:${two(minutes)}:${two(seconds)}`;
+	return `T-${two(hours)}:${two(minutes)}:${two(seconds)}`;
 };
+
+/** Regular-session phase from an Eastern wall clock — not operating state. */
+export const marketPhase = (iso: string) => {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: 'America/New_York',
+		weekday: 'short',
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: false,
+	}).formatToParts(new Date(iso));
+	const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+	const weekday = get('weekday');
+	if (weekday === 'Sat' || weekday === 'Sun') return 'closed';
+	const hour = Number(get('hour')) % 24;
+	const minutes = hour * 60 + Number(get('minute'));
+	if (minutes < 9 * 60 + 30) return 'pre';
+	if (minutes < 16 * 60) return 'rth';
+	return 'after';
+};
+
+const TAPE_TAG = {
+	signal: 'SIG',
+	'eligibility-decision': 'ELG',
+	'candidate-snapshot': 'CND',
+	'decision-packet': 'PKT',
+	'universe-snapshot': 'UNV',
+} as const;
+
+/** Short tape kind tag for the live ledger. */
+export const tapeTag = (kind: string) => TAPE_TAG[kind as keyof typeof TAPE_TAG] ?? kind.slice(0, 3).toUpperCase();
 
 export const formatAge = (iso: string, now = Date.now()) => {
 	const age = Math.max(0, now - Date.parse(iso));

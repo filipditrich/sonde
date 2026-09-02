@@ -26,18 +26,33 @@ export const liveScript = `
 			hour12: false,
 		}).formatToParts(new Date());
 		const get = (type) => (parts.find((part) => part.type === type) || {}).value || '';
-		node.textContent = 'ET ' + get('weekday') + ' ' + get('day') + ' ' + get('month') + ' ' + get('hour') + ':' + get('minute') + ':' + get('second');
+		const weekday = get('weekday');
+		const hour = Number(get('hour')) % 24;
+		const minute = Number(get('minute'));
+		let phase = 'rth';
+		if (weekday === 'Sat' || weekday === 'Sun') phase = 'closed';
+		else if (hour * 60 + minute < 9 * 60 + 30) phase = 'pre';
+		else if (hour * 60 + minute >= 16 * 60) phase = 'after';
+		const rail = document.querySelector('[data-phase]');
+		if (rail) {
+			rail.dataset.phase = phase;
+			rail.className = 'phase ' + phase;
+			rail.textContent = 'session ' + phase;
+		}
+		node.innerHTML = 'ET ' + get('weekday') + ' ' + get('day') + ' ' + get('month') + ' ' + get('hour') + ':' + get('minute') + ':' + get('second') + '<span class="caret">█</span>';
 	};
 	const remaining = () => {
 		const node = document.querySelector('[data-deadline]');
 		if (!node || !node.dataset.deadline) return;
 		const ms = Date.parse(node.dataset.deadline) - Date.now();
-		if (ms <= 0) { node.textContent = 'due'; return; }
+		if (ms <= 0) { node.textContent = 'due'; node.classList.add('due'); return; }
+		node.classList.remove('due');
 		const hours = Math.floor(ms / 3600000);
 		const minutes = Math.floor((ms % 3600000) / 60000);
+		const seconds = Math.floor((ms % 60000) / 1000);
 		node.textContent = hours >= 24
-			? 'T-' + Math.floor(hours / 24) + 'd ' + pad(hours % 24) + ':' + pad(minutes)
-			: 'T-' + pad(hours) + ':' + pad(minutes);
+			? 'T-' + Math.floor(hours / 24) + 'd ' + pad(hours % 24) + ':' + pad(minutes) + ':' + pad(seconds)
+			: 'T-' + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
 	};
 	const paneKey = '${PANE_STORAGE_KEY}';
 	const readPanes = () => {
@@ -74,6 +89,7 @@ export const liveScript = `
 	};
 	const paint = async () => {
 		if (!home()) return;
+		const prior = lastCursor;
 		const response = await fetch('/api/view');
 		if (!response.ok) return;
 		const html = await response.text();
@@ -84,6 +100,11 @@ export const liveScript = `
 		applyPanes();
 		bindPanes();
 		remaining();
+		clock();
+		if (painted > prior) {
+			const row = document.querySelector('.ledger li');
+			if (row) row.classList.add('fresh-row');
+		}
 	};
 	let paintTimer = 0;
 	const paintSoon = () => {
