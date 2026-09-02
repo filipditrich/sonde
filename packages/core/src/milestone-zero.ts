@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import * as z from 'zod';
 
 import { Decimal, Sha256 } from './primitives';
+import { CockpitListingQuote } from './sip-quote';
 
 /** Stable namespace for Milestone 0 artifact identities. Changing it rewrites history. */
 const SONDE_EVIDENCE_NAMESPACE = '3c8a1e2f-5b64-4d1a-9c7e-0f2a4b6d8e10';
@@ -318,6 +319,7 @@ export const CockpitSnapshot = z.object({
 			}),
 		)
 		.default([]),
+	quotes: z.array(CockpitListingQuote).default([]),
 });
 export type CockpitSnapshot = z.infer<typeof CockpitSnapshot>;
 export const CockpitStreamEvent = z.object({

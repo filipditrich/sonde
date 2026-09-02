@@ -14,3 +14,4 @@ export * from './document-preview';
 export * from './milestone-one';
 export * from './milestone-zero';
 export * from './schema';
+export * from './sip-quote';

@@ -26,6 +26,7 @@ import {
 	signals,
 	sourceDocuments,
 } from './schema';
+import { readListingQuote } from './sip-quote';
 
 const issuerNameOf = async (db: Database, cik: string) => {
 	const [row] = await db.select({ legalName: issuers.legalName }).from(issuers).where(eq(issuers.cik, cik)).limit(1);
@@ -89,6 +90,7 @@ export const readCockpitCandidate = async (db: Database, id: string) => {
 	const [row] = await db.select().from(candidateSnapshots).where(eq(candidateSnapshots.id, id)).limit(1);
 	if (!row) return undefined;
 	const related = await relatedDecisions(db, row.issuerCik, row.decisionWindowOpen);
+	const quote = await readListingQuote(db, row.issuerCik);
 	return CockpitCandidateDetail.parse({
 		id: row.id,
 		issuerCik: row.issuerCik,
@@ -101,6 +103,7 @@ export const readCockpitCandidate = async (db: Database, id: string) => {
 		inputRefs: row.inputRefs,
 		recordedAt: row.recordedAt.toISOString(),
 		...related,
+		...(quote ? { quote } : {}),
 	});
 };
 

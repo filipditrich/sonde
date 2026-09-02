@@ -2,6 +2,7 @@ import * as z from 'zod';
 
 import { FailedCheck } from './milestone-one';
 import { Cik, InputReference, MarketCloseAt, MarketOpenAt, ObservedAt, RecordedAt } from './milestone-zero';
+import { CockpitListingQuote } from './sip-quote';
 
 export const CockpitFunnelStage = z.enum(['documents', 'transactions', 'qualifying-purchases', 'distinct-owner-candidates', 'liquid-signals']);
 export type CockpitFunnelStage = z.infer<typeof CockpitFunnelStage>;
@@ -30,6 +31,7 @@ export const CockpitCandidateDetail = z.object({
 	eligibilityId: z.string().uuid().optional(),
 	packetId: z.string().uuid().optional(),
 	signalId: z.string().uuid().optional(),
+	quote: CockpitListingQuote.optional(),
 });
 export type CockpitCandidateDetail = z.infer<typeof CockpitCandidateDetail>;
 

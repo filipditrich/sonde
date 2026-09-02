@@ -7,6 +7,7 @@ export type CockpitPath =
 	| { kind: 'view' }
 	| { kind: 'funnel'; stage: CockpitFunnelStage }
 	| { kind: 'candidates' | 'signals' | 'eligibility' | 'packets' | 'facts'; id: string }
+	| { kind: 'candidate-json'; id: string }
 	| { kind: 'documents'; id: string }
 	| { kind: 'unknown' };
 
@@ -17,6 +18,8 @@ export const parseCockpitPath = (pathname: string): CockpitPath => {
 	if (pathname === '/api/snapshot') return { kind: 'snapshot' };
 	if (pathname === '/api/events') return { kind: 'events' };
 	if (pathname === '/api/view') return { kind: 'view' };
+	const apiCandidate = pathname.match(/^\/api\/candidates\/([^/]+)$/);
+	if (apiCandidate) return { kind: 'candidate-json', id: apiCandidate[1]! };
 	const funnel = pathname.match(/^\/funnel\/([^/]+)$/);
 	if (funnel && FUNNEL.has(funnel[1] as CockpitFunnelStage)) return { kind: 'funnel', stage: funnel[1] as CockpitFunnelStage };
 	const document = pathname.match(/^\/documents\/([0-9a-f]{64})$/);

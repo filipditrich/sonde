@@ -14,3 +14,4 @@ export * from './cutoff-clock';
 export * from './milestone-one';
 export * from './milestone-zero';
 export * from './primitives';
+export * from './sip-quote';

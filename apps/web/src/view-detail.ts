@@ -1,14 +1,18 @@
-import type {
-	CockpitCandidateDetail,
-	CockpitDocumentDetail,
-	CockpitEligibilityDetail,
-	CockpitFactDetail,
-	CockpitFunnelPopulation,
-	CockpitPacketDetail,
-	CockpitSignalDetail,
-	InputReference,
+import {
+	sessionChange,
+	signedDecimal,
+	weekRange,
+	type CockpitCandidateDetail,
+	type CockpitDocumentDetail,
+	type CockpitEligibilityDetail,
+	type CockpitFactDetail,
+	type CockpitFunnelPopulation,
+	type CockpitPacketDetail,
+	type CockpitSignalDetail,
+	type InputReference,
 } from '@sonde/core';
 
+import { RANGE_BUTTONS, sipChartSvg } from './chart';
 import { codeClass, escapeHtml, formatEastern } from './html';
 
 const STUDY_PRIOR = { winRate: '58.3%', median: '+1.83%' } as const;
@@ -44,8 +48,47 @@ const factList = (rows: CockpitCandidateDetail['qualifyingFacts']) => {
 
 const link = (href: string | undefined, label: string) => (href ? `<p><a href="${escapeHtml(href)}">${escapeHtml(label)}</a></p>` : '');
 
+const listingLabel = (quote: { venue: string; ticker: string }) => (quote.venue === 'unspecified' ? quote.ticker : `${quote.venue}:${quote.ticker}`);
+
+const changePill = (bars: NonNullable<CockpitCandidateDetail['quote']>['bars']) => {
+	const change = sessionChange(bars);
+	if (!change) return '';
+	const arrow = change.direction === 'down' ? '↓' : '↑';
+	const pct = change.pct !== undefined ? ` ${arrow} ${escapeHtml(change.pct)}%` : '';
+	return `<span class="chg ${change.direction}">${escapeHtml(signedDecimal(change.change))}${pct}</span>`;
+};
+
+const rangeButtons = () =>
+	RANGE_BUTTONS.map(
+		(button, index) => `<button type="button" data-chart-range="${button.id}" aria-pressed="${index === 0}">${button.label}</button>`,
+	).join('');
+
+const quoteStats = (quote: NonNullable<CockpitCandidateDetail['quote']>) => {
+	const last = quote.bars.at(-1);
+	if (!last) return '';
+	const range = weekRange(quote.bars);
+	const label = range && range.sessions >= 252 ? '52-wk' : range ? `${range.sessions}-session` : undefined;
+	const rangeRows =
+		range && label
+			? `<dt>${escapeHtml(label)} high</dt><dd>${escapeHtml(range.high)}</dd><dt>${escapeHtml(label)} low</dt><dd>${escapeHtml(range.low)}</dd>`
+			: '<dt>range</dt><dd>not enough retained sessions</dd>';
+	return `<dl class="kv stats"><dt>open</dt><dd>${escapeHtml(last.open)}</dd><dt>high</dt><dd>${escapeHtml(last.high)}</dd><dt>low</dt><dd>${escapeHtml(last.low)}</dd><dt>volume</dt><dd>${escapeHtml(last.volume)}</dd>${rangeRows}</dl>`;
+};
+
+const quoteOverview = (detail: CockpitCandidateDetail) => {
+	const quote = detail.quote;
+	if (!quote) return '<p class="not-built">no listing retained for this issuer</p>';
+	const last = quote.bars.at(-1);
+	if (!last) {
+		return `<p class="quote-meta">${escapeHtml(listingLabel(quote))} · SIP delayed daily</p><p class="not-built">no SIP bars retained</p>`;
+	}
+	const previous = quote.bars.at(-2)?.close;
+	const payload = JSON.stringify(quote.bars).replaceAll('<', '\\u003c');
+	return `<p class="quote-meta">${escapeHtml(listingLabel(quote))} · SIP delayed daily</p><p class="hero">${escapeHtml(last.close)} <span class="hero-unit">USD</span> ${changePill(quote.bars)}</p><p class="hero-label">session ${escapeHtml(last.sessionDate)}${previous ? ` · previous close ${escapeHtml(previous)}` : ''}</p><nav class="ranges">${rangeButtons()}</nav><div data-sip-chart data-range="1d" data-candidate-id="${escapeHtml(detail.id)}">${sipChartSvg(quote.bars, '1d', previous)}</div><p class="hero-label">1D is the last completed SIP session. No intraday is retained. Chart refreshes when a new delayed daily bar is stored.</p>${quoteStats(quote)}<script type="application/json" id="sip-bars">${payload}</script>`;
+};
+
 export const candidatePage = (detail: CockpitCandidateDetail) =>
-	`<main class="detail"><h1>Candidate</h1><p>${escapeHtml(detail.issuerName)} ${escapeHtml(detail.issuerCik)}</p><p>${detail.reportingOwnerCiks.length} reporting owners · window ${escapeHtml(formatEastern(detail.decisionWindowOpen))}</p><h2>Owners</h2><ul>${detail.reportingOwnerCiks.map((cik) => `<li>${escapeHtml(cik)}</li>`).join('')}</ul><h2>Qualifying purchases</h2>${factList(detail.qualifyingFacts)}${link(detail.eligibilityId ? `/eligibility/${detail.eligibilityId}` : undefined, 'Eligibility Decision')}${link(detail.packetId ? `/packets/${detail.packetId}` : undefined, 'Decision Packet')}${link(detail.signalId ? `/signals/${detail.signalId}` : undefined, 'Signal')}<h2>Input references</h2>${refs(detail.inputRefs)}</main>`;
+	`<main class="detail overview"><h1>${escapeHtml(detail.issuerName)}</h1><p>${escapeHtml(detail.issuerCik)} · ${detail.reportingOwnerCiks.length} reporting owners · window ${escapeHtml(formatEastern(detail.decisionWindowOpen))}</p>${quoteOverview(detail)}<h2>Owners</h2><ul>${detail.reportingOwnerCiks.map((cik) => `<li>${escapeHtml(cik)}</li>`).join('')}</ul><h2>Qualifying purchases</h2>${factList(detail.qualifyingFacts)}${link(detail.eligibilityId ? `/eligibility/${detail.eligibilityId}` : undefined, 'Eligibility Decision')}${link(detail.packetId ? `/packets/${detail.packetId}` : undefined, 'Decision Packet')}${link(detail.signalId ? `/signals/${detail.signalId}` : undefined, 'Signal')}<h2>Input references</h2>${refs(detail.inputRefs)}</main>`;
 
 export const signalPage = (detail: CockpitSignalDetail) =>
 	`<main class="detail"><h1>Signal</h1><p>${escapeHtml(detail.issuerName)} ${escapeHtml(detail.issuerCik)}${detail.ticker ? ` ${escapeHtml(detail.ticker)}` : ''} long</p><p>entry ${escapeHtml(detail.entryConvention)} ${escapeHtml(formatEastern(detail.decisionWindowOpen))} · horizon close ${escapeHtml(formatEastern(detail.horizonCloseAt))}</p><h2>Rationale</h2><p>${escapeHtml(detail.rationale)}</p><h2>Bootstrap prior</h2><p>${escapeHtml(detail.bootstrapPrior.label)} · ${detail.bootstrapPrior.distinctOwnerCount} owners · labelled study cohort ${STUDY_PRIOR.winRate} win rate, median ${STUDY_PRIOR.median}; not event confidence</p><h2>Causing filings</h2>${factList(detail.sources)}${link(detail.candidateSnapshotId ? `/candidates/${detail.candidateSnapshotId}` : undefined, 'Candidate Snapshot')}${link(detail.eligibilityId ? `/eligibility/${detail.eligibilityId}` : undefined, 'Eligibility Decision')}${link(detail.packetId ? `/packets/${detail.packetId}` : undefined, 'Decision Packet')}<h2>Input references</h2>${refs(detail.inputRefs)}<h2>Signal Outcome</h2><p class="not-built">not built in this milestone</p></main>`;

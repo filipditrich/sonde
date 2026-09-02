@@ -45,6 +45,7 @@ const snapshot = {
 			],
 		},
 	],
+	quotes: [],
 } as unknown as CockpitSnapshot;
 
 const reader = {
@@ -53,7 +54,44 @@ const reader = {
 		(cursor === 1
 			? [{ cursor: 2, kind: 'job-run-event', artifactId: 'run', recordedAt: '2026-08-30T00:00:00.000Z' }]
 			: []) as unknown as CockpitStreamEvent[],
-	candidate: async () => undefined,
+	candidate: async (id: string) =>
+		id === '0199a1f0-0000-7000-8000-000000000099'
+			? ({
+					id,
+					issuerCik: '0001702750',
+					issuerName: 'Wix.com Ltd.',
+					strategyVersion: 'strategy-v1',
+					decisionWindowOpen: '2026-09-03T13:30:00.000Z',
+					cutoffAt: '2026-09-02T13:20:00.000Z',
+					reportingOwnerCiks: ['0001739310'],
+					qualifyingFacts: [
+						{
+							factId: 'fact',
+							reportingOwnerCik: '0001739310',
+							reportingOwnerName: 'Owner',
+							transactionCode: 'P',
+							shares: '10',
+							pricePerShare: '1',
+							observedAt: '2026-08-30T00:00:00.000Z',
+						},
+					],
+					inputRefs: [{ kind: 'form4-transaction-fact', id: 'fact', role: 'qualifying-purchase' }],
+					recordedAt: '2026-08-30T00:00:00.000Z',
+					quote: {
+						ticker: 'WIX',
+						venue: 'NASDAQ',
+						listingId: 'listing',
+						issuerCik: '0001702750',
+						issuerName: 'Wix.com Ltd.',
+						feed: 'sip',
+						delay: 'delayed-daily',
+						bars: [
+							{ sessionDate: '2026-08-31', open: '88.20', high: '88.90', low: '87.10', close: '88.37', volume: '1000' },
+							{ sessionDate: '2026-09-01', open: '88.40', high: '88.90', low: '87.90', close: '88.48', volume: '1100' },
+						],
+					},
+				} as const)
+			: undefined,
 	signal: async (id: string) =>
 		id === '0199a1f0-0000-7000-8000-000000000034'
 			? ({
@@ -242,6 +280,60 @@ describe('cockpit server', () => {
 		expect(body).toContain('open retained bytes');
 		expect(body).not.toContain('<xml');
 	});
+	test('Candidate overview is SIP delayed daily, not a fundamentals mock', async () => {
+		const headers = await authenticated();
+		const page = await app.fetch(new Request('http://local/candidates/0199a1f0-0000-7000-8000-000000000099', { headers }));
+		const body = await page.text();
+		expect(body).toContain('SIP delayed');
+		expect(body).toContain('88.48');
+		expect(body).toContain('data-chart-range="1d"');
+		expect(body).toContain('data-sip-chart');
+		expect(body).toContain('No intraday is retained');
+		expect(body).not.toContain('P/E');
+		expect(body).not.toContain('Dividend');
+		expect(body).not.toContain('EPS Beat');
+		const json = await (await app.fetch(new Request('http://local/api/candidates/0199a1f0-0000-7000-8000-000000000099', { headers }))).json();
+		expect((json as { quote: { ticker: string } }).quote.ticker).toBe('WIX');
+	});
+	test('home quote strip shows last SIP close and change', async () => {
+		const quoted = createCockpitServer(
+			{
+				...reader,
+				snapshot: async () =>
+					({
+						...snapshot,
+						quotes: [
+							{
+								ticker: 'WIX',
+								venue: 'NASDAQ',
+								listingId: 'listing',
+								issuerCik: '0001702750',
+								issuerName: 'Wix.com Ltd.',
+								href: '/candidates/0199a1f0-0000-7000-8000-000000000099',
+								feed: 'sip',
+								delay: 'delayed-daily',
+								bars: [
+									{ sessionDate: '2026-08-31', open: '88.20', high: '88.90', low: '87.10', close: '88.37', volume: '1000' },
+									{ sessionDate: '2026-09-01', open: '88.40', high: '88.90', low: '87.90', close: '88.48', volume: '1100' },
+								],
+							},
+						],
+					}) as unknown as CockpitSnapshot,
+			},
+			token,
+		);
+		const session = await quoted.fetch(new Request('http://local/session', { method: 'POST', headers: { authorization: `Bearer ${token}` } }));
+		const page = await quoted.fetch(new Request('http://local/', { headers: { cookie: session.headers.get('set-cookie')!.split(';')[0]! } }));
+		const body = await page.text();
+		expect(body).toContain('class="ticker quotes"');
+		expect(body).toContain('class="ticker-viewport"');
+		expect(body).toContain('flex-shrink: 0');
+		expect(body).toContain('SIP delayed');
+		expect(body).toContain('WIX');
+		expect(body).toContain('88.48');
+		expect(body).toContain('+0.11');
+		expect(body).toContain('/candidates/0199a1f0-0000-7000-8000-000000000099');
+	});
 });
 
 test('parses cockpit paths without treating later milestones as real routes', () => {
@@ -256,6 +348,10 @@ test('parses cockpit paths without treating later milestones as real routes', ()
 	expect(parseCockpitPath('/signals/0199a1f0-0000-7000-8000-000000000034')).toEqual({
 		kind: 'signals',
 		id: '0199a1f0-0000-7000-8000-000000000034',
+	});
+	expect(parseCockpitPath('/api/candidates/0199a1f0-0000-7000-8000-000000000099')).toEqual({
+		kind: 'candidate-json',
+		id: '0199a1f0-0000-7000-8000-000000000099',
 	});
 });
 

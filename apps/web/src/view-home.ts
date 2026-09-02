@@ -1,5 +1,6 @@
-import type { CockpitNextAction, CockpitSnapshot } from '@sonde/core';
+import { sessionChange, signedDecimal, type CockpitListingQuote, type CockpitNextAction, type CockpitSnapshot } from '@sonde/core';
 
+import { sparklineSvg } from './chart';
 import { asciiBar, codeClass, cutoffProgress, escapeHtml, formatAge, formatEastern, formatTapeStamp, formatTminus, healthBar, tapeTag } from './html';
 
 const tapeHref = (kind: CockpitSnapshot['tape'][number]['kind'], id: string) => {
@@ -17,11 +18,31 @@ const mast = (snapshot: CockpitSnapshot) => {
 	return `<dl class="mast"><div><dt>Runtime</dt><dd>Sonde · paper</dd></div><div><dt>Engine</dt><dd data-engine="${escapeHtml(engine.freshness)}"><span class="pip"></span>${escapeHtml(engine.freshness)} · ${escapeHtml(beat)}</dd></div><div><dt>Market clock</dt><dd>${escapeHtml(formatEastern(snapshot.asOf))}</dd></div><div><dt>Next</dt><dd>${escapeHtml(next)}</dd></div><div><dt>Snapshot</dt><dd>${escapeHtml(formatAge(snapshot.asOf))} · cursor ${snapshot.cursor}</dd></div><div><dt>Alerts</dt><dd class="not-built">not built</dd></div></dl>`;
 };
 
-const ticker = (facts: CockpitSnapshot['facts']) => {
-	const names = [...new Set(facts.map((fact) => fact.issuerName))];
+const quoteCard = (quote: CockpitListingQuote) => {
+	const last = quote.bars.at(-1);
+	const change = sessionChange(quote.bars);
+	const spark = sparklineSvg(quote.bars.map((bar) => bar.close).slice(-20));
+	const chg =
+		change !== undefined
+			? `<span class="chg ${change.direction}">${escapeHtml(signedDecimal(change.change))}${change.pct !== undefined ? ` ${change.direction === 'down' ? '↓' : '↑'} ${escapeHtml(change.pct)}%` : ''}</span>`
+			: '';
+	const body = last
+		? `<span class="sym">${escapeHtml(quote.ticker)}</span><span class="last">${escapeHtml(last.close)}</span>${chg}${spark}`
+		: `<span class="sym">${escapeHtml(quote.ticker)}</span><span class="not-built">no SIP bars retained</span>`;
+	return `<span class="quote">${quote.href ? `<a href="${escapeHtml(quote.href)}">${body}</a>` : body}</span>`;
+};
+
+const ticker = (snapshot: CockpitSnapshot) => {
+	const quotes = snapshot.quotes ?? [];
+	if (quotes.length) {
+		const cards = quotes.map(quoteCard).join('');
+		const last = quotes.map((quote) => quote.bars.at(-1)?.sessionDate).find(Boolean);
+		return `<div class="ticker quotes"><span class="ticker-meta">SIP delayed${last ? `<span>last ${escapeHtml(last)}</span>` : ''}</span><div class="ticker-viewport"><div class="ticker-track">${cards}${cards}</div></div></div>`;
+	}
+	const names = [...new Set(snapshot.facts.map((fact) => fact.issuerName))];
 	if (!names.length) return '';
 	const line = names.map((name) => escapeHtml(name)).join('   ·   ');
-	return `<div class="ticker"><span>${line}   ·   ${line}</span></div>`;
+	return `<div class="ticker"><div class="ticker-viewport"><div class="ticker-track"><span>${line}</span><span>${line}</span></div></div></div>`;
 };
 
 const head = (title: string, meta?: string) =>
@@ -129,4 +150,4 @@ const healthMeta = (health: CockpitSnapshot['health']) => {
 };
 
 export const homeMain = (snapshot: CockpitSnapshot) =>
-	`<main data-home data-cursor="${snapshot.cursor}">${mast(snapshot)}${ticker(snapshot.facts)}<div class="board">${pane({ id: 'urgent', klass: 'not-built pane-sm', title: 'Urgent' }, '<p>not built in this milestone</p>')}${nextActionSection(snapshot.nextAction)}${pane({ id: 'health', title: 'Health', meta: healthMeta(snapshot.health) }, `<table class="sheet"><thead><tr><th>job</th><th>load</th><th>state</th></tr></thead><tbody>${healthRows(snapshot.health)}</tbody></table>`)}${pane({ id: 'funnel', title: 'Funnel', meta: String(snapshot.funnel.documents) }, funnelItems(snapshot))}${pane({ id: 'tape', klass: 'pane-tall', title: 'Tape', meta: String(snapshot.tape?.length ?? 0) }, `<ul class="ledger">${tapeItems(snapshot.tape)}</ul>`)}${pane({ id: 'facts', klass: 'pane-tall', title: 'Facts', meta: String(snapshot.facts.length) }, `<table class="sheet"><thead><tr><th>date</th><th>issuer</th><th>owner</th><th>amt</th><th>cls</th></tr></thead><tbody>${factRows(snapshot.facts)}</tbody></table>`)}${pane({ id: 'positions', klass: 'not-built pane-sm', title: 'Positions' }, '<p>not built in this milestone</p>')}${pane({ id: 'scorecards', klass: 'not-built pane-wide', title: 'Scorecards' }, '<p>not built in this milestone</p>')}</div>${footer(snapshot)}</main>`;
+	`<main data-home data-cursor="${snapshot.cursor}">${mast(snapshot)}${ticker(snapshot)}<div class="board">${pane({ id: 'urgent', klass: 'not-built pane-sm', title: 'Urgent' }, '<p>not built in this milestone</p>')}${nextActionSection(snapshot.nextAction)}${pane({ id: 'health', title: 'Health', meta: healthMeta(snapshot.health) }, `<table class="sheet"><thead><tr><th>job</th><th>load</th><th>state</th></tr></thead><tbody>${healthRows(snapshot.health)}</tbody></table>`)}${pane({ id: 'funnel', title: 'Funnel', meta: String(snapshot.funnel.documents) }, funnelItems(snapshot))}${pane({ id: 'tape', klass: 'pane-tall', title: 'Tape', meta: String(snapshot.tape?.length ?? 0) }, `<ul class="ledger">${tapeItems(snapshot.tape)}</ul>`)}${pane({ id: 'facts', klass: 'pane-tall', title: 'Facts', meta: String(snapshot.facts.length) }, `<table class="sheet"><thead><tr><th>date</th><th>issuer</th><th>owner</th><th>amt</th><th>cls</th></tr></thead><tbody>${factRows(snapshot.facts)}</tbody></table>`)}${pane({ id: 'positions', klass: 'not-built pane-sm', title: 'Positions' }, '<p>not built in this milestone</p>')}${pane({ id: 'scorecards', klass: 'not-built pane-wide', title: 'Scorecards' }, '<p>not built in this milestone</p>')}</div>${footer(snapshot)}</main>`;

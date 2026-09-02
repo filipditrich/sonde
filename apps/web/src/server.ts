@@ -13,7 +13,7 @@ import type {
 	CockpitStreamEvent,
 } from '@sonde/core';
 
-import { parseCockpitPath } from './paths';
+import { parseCockpitPath, type CockpitPath } from './paths';
 import { homePage, loginPage, page, viewFragment } from './view';
 import { candidatePage, documentPage, eligibilityPage, factPage, funnelPage, packetPage, signalPage } from './view-detail';
 
@@ -83,11 +83,13 @@ const detailPage = async (reader: CockpitReader, kind: 'candidates' | 'signals' 
 	return detail ? html(page(packetPage(detail))) : notFound();
 };
 
-const read = async (request: Request, url: URL, reader: CockpitReader): Promise<Response> => {
-	const path = parseCockpitPath(url.pathname);
+const jsonOf = async (reader: CockpitReader, path: { kind: 'snapshot' } | { kind: 'candidate-json'; id: string }) => {
 	if (path.kind === 'snapshot') return Response.json(await reader.snapshot());
-	if (path.kind === 'events') return streamEvents(request, url, reader);
-	if (path.kind === 'view') return html(viewFragment(await reader.snapshot()));
+	const detail = await reader.candidate(path.id);
+	return detail ? Response.json(detail) : notFound();
+};
+
+const pageOf = async (reader: CockpitReader, path: Exclude<CockpitPath, { kind: 'snapshot' | 'events' | 'view' | 'candidate-json' }>) => {
 	if (path.kind === 'home') return html(homePage(await reader.snapshot()));
 	if (path.kind === 'funnel') {
 		const population = await reader.funnelStage(path.stage);
@@ -103,6 +105,14 @@ const read = async (request: Request, url: URL, reader: CockpitReader): Promise<
 	}
 	if (path.kind === 'unknown') return notFound();
 	return detailPage(reader, path.kind, path.id);
+};
+
+const read = async (request: Request, url: URL, reader: CockpitReader): Promise<Response> => {
+	const path = parseCockpitPath(url.pathname);
+	if (path.kind === 'snapshot' || path.kind === 'candidate-json') return jsonOf(reader, path);
+	if (path.kind === 'events') return streamEvents(request, url, reader);
+	if (path.kind === 'view') return html(viewFragment(await reader.snapshot()));
+	return pageOf(reader, path);
 };
 
 export const createCockpitServer = (reader: CockpitReader, token: string) => {

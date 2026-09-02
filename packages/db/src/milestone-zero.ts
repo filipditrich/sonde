@@ -42,6 +42,7 @@ import {
 	sipDailyBars,
 	sourceDocuments,
 } from './schema';
+import { readCockpitQuotes } from './sip-quote';
 
 export const appendAcquisition = async (db: Database, input: typeof acquisitionAttempts.$inferInsert) => db.insert(acquisitionAttempts).values(input);
 export const retainDocument = async (db: Database, input: typeof sourceDocuments.$inferInsert) =>
@@ -441,6 +442,11 @@ export const readCockpitSnapshot = async (db: Database, asOf = new Date()): Prom
 		facts: facts.map(toForm4Fact),
 		health: projectHealth([...events], asOf),
 		tape: await readDecisionTape(db, asOf),
+		quotes: await readCockpitQuotes(
+			db,
+			asOf,
+			facts.map((fact) => fact.issuerCik),
+		),
 	});
 };
 
