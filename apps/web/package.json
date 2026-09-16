@@ -4,10 +4,12 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"dev": "portless",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",
 		"start": "bun run src/main.ts"
 	},
+	"portless": { "name": "sonde-web", "script": "start" },
 	"dependencies": {
 		"@sonde/core": "workspace:*",
 		"@sonde/db": "workspace:*"
