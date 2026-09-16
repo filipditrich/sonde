@@ -4,12 +4,14 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "bun ./node_modules/next/dist/bin/next dev",
+		"dev": "portless",
+		"dev:app": "bun ./node_modules/next/dist/bin/next dev",
 		"build": "bun ./node_modules/next/dist/bin/next build",
 		"start": "bun ./node_modules/next/dist/bin/next start",
 		"typecheck": "bun ./node_modules/next/dist/bin/next typegen && tsc --noEmit",
 		"test": "bun test"
 	},
+	"portless": { "name": "sonde", "script": "dev:app" },
 	"dependencies": {
 		"next": "16.3.3",
 		"react": "19.2.8",
